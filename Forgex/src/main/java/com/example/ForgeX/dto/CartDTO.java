@@ -5,12 +5,13 @@ import java.util.List;
 
 import org.hibernate.internal.build.AllowNonPortable;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 
 @Data
-@AllowNonPortable
+@AllArgsConstructor
 @NoArgsConstructor
 public class CartDTO {
 

@@ -12,17 +12,16 @@ import com.example.ForgeX.repository.UserRepository;
 
 @Service
 public class UserDetailsServiceImpl implements UserDetailsService {
+
     @Autowired
-    UserRepository userRepository;
+    private UserRepository userRepository;
 
     @Override
-    @Transactional
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByUserName(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User Not Found with username: " + username));
+    @Transactional(readOnly = true)
+    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+        User user = userRepository.findByEmail(email.trim().toLowerCase())
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
 
         return UserDetailsImpl.build(user);
     }
-
-
 }

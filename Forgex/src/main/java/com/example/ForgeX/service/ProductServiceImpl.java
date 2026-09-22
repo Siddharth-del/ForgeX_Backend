@@ -3,27 +3,26 @@ package com.example.ForgeX.service;
 import java.io.IOException;
 import java.util.List;
 
-import javax.swing.SortOrder;
-
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.example.ForgeX.dto.ProductDTO;
 import com.example.ForgeX.dto.ProductResponse;
-
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
-
+import com.example.ForgeX.exceptions.ResourceNotFoundException;
 import com.example.ForgeX.model.Category;
 import com.example.ForgeX.model.Gender;
 import com.example.ForgeX.model.Product;
 import com.example.ForgeX.repository.ProductRepository;
 
 @Service
+@Transactional(readOnly = true)
 public class ProductServiceImpl implements ProductService {
 
     @Autowired
@@ -32,157 +31,138 @@ public class ProductServiceImpl implements ProductService {
     @Autowired
     private ModelMapper modelMapper;
 
-    @Autowired 
+    @Autowired
     private FileService fileService;
 
-     @Value("${project.image}")
+    @Value("${project.image}")
     private String path;
 
+    // ---------- Create ----------
 
     @Override
+    @Transactional
     public ProductDTO addProduct(ProductDTO productDTO) {
         Product product = modelMapper.map(productDTO, Product.class);
-        // product.setImageUrl("default.png");
+        product.setProductId(null);                 // always create a new row
+        if (product.getActive() == null) product.setActive(true);
+
         Product savedProduct = productRepository.save(product);
         return modelMapper.map(savedProduct, ProductDTO.class);
     }
 
-    public ProductResponse getAllProducts(Integer pageNumber, Integer pageSize, String sortBy, String sortOrder) {
-        Sort sortByAndOrder = sortOrder.equalsIgnoreCase("asc")
-                ? Sort.by(sortBy).ascending()
-                : Sort.by(sortBy).descending();
-        PageRequest pageDetails = PageRequest.of(pageNumber, pageSize, sortByAndOrder);
-        Page<Product> pageProducts = productRepository.findAll(pageDetails);
+    // ---------- Read ----------
 
-        List<Product> products = pageProducts.getContent();
-
-        List<ProductDTO> productDTOS = products.stream()
-                .map(product -> modelMapper.map(product, ProductDTO.class))
-                .toList();
-
-        ProductResponse productResponse = new ProductResponse();
-        productResponse.setContent(productDTOS);
-        productResponse.setPageNumber(pageProducts.getNumber());
-        productResponse.setPageSize(pageProducts.getSize());
-        productResponse.setTotalElements(pageProducts.getTotalElements());
-        productResponse.setTotalPages(pageProducts.getTotalPages());
-        productResponse.setLastPage(pageProducts.isLast());
-        return productResponse;
+    @Override
+    public ProductResponse getAllProducts(Integer pageNumber, Integer pageSize,
+                                          String sortBy, String sortOrder) {
+        Page<Product> page = productRepository.findAll(
+                buildPage(pageNumber, pageSize, sortBy, sortOrder));
+        return buildResponse(page);
     }
 
     @Override
-    public ProductResponse getProductByKeyWord(String keyword, Integer pageNumber, Integer pageSize, String sortBy,
-            String sortOrder) {
-        Sort sortByAndOrder = sortOrder.equalsIgnoreCase("asc")
-                ? Sort.by().ascending()
-                : Sort.by().descending();
-        PageRequest pageDetails = PageRequest.of(pageNumber, pageSize, sortByAndOrder);
-        Page<Product> pageProducts = productRepository.findByNameLikeIgnoreCase('%' + keyword + '%', pageDetails);
-
-        List<Product> products = pageProducts.getContent();
-        List<ProductDTO> productDTOs = products.stream()
-                .map(product -> modelMapper.map(product, ProductDTO.class))
-                .toList();
-        ProductResponse productResponse = new ProductResponse();
-        productResponse.setContent(productDTOs);
-        productResponse.setPageNumber(pageProducts.getNumber());
-        productResponse.setPageSize(pageProducts.getSize());
-        productResponse.setTotalElements(pageProducts.getTotalElements());
-        productResponse.setTotalPages(pageProducts.getTotalPages());
-        productResponse.setLastPage(pageProducts.isLast());
-        return productResponse;
+    public ProductResponse getProductByKeyWord(String keyword, Integer pageNumber, Integer pageSize,
+                                               String sortBy, String sortOrder) {
+        Page<Product> page = productRepository.findByNameLikeIgnoreCase(
+                "%" + keyword + "%",
+                buildPage(pageNumber, pageSize, sortBy, sortOrder));
+        return buildResponse(page);
     }
 
     @Override
     public ProductResponse sortProductByCategory(String category, Integer pageNumber, Integer pageSize,
-            String sortBy, String sortOrder) {
-        Sort sortByAndOrder = sortOrder.equalsIgnoreCase("asc")
-                ? Sort.by().ascending()
-                : Sort.by().descending();
+                                                 String sortBy, String sortOrder) {
         Category categoryEnum = Category.valueOf(category.toUpperCase());
-        PageRequest pageDetails = PageRequest.of(pageNumber, pageSize, sortByAndOrder);
-        Page<Product> pageProducts = productRepository.findByCategory(categoryEnum, pageDetails);
-
-        List<Product> products = pageProducts.getContent();
-        List<ProductDTO> productDTOs = products.stream()
-                .map(product -> modelMapper.map(product, ProductDTO.class))
-                .toList();
-        ProductResponse productResponse = new ProductResponse();
-        productResponse.setContent(productDTOs);
-        productResponse.setPageNumber(pageProducts.getNumber());
-        productResponse.setPageSize(pageProducts.getSize());
-        productResponse.setTotalElements(pageProducts.getTotalElements());
-        productResponse.setTotalPages(pageProducts.getTotalPages());
-        productResponse.setLastPage(pageProducts.isLast());
-        return productResponse;
+        Page<Product> page = productRepository.findByCategory(
+                categoryEnum,
+                buildPage(pageNumber, pageSize, sortBy, sortOrder));
+        return buildResponse(page);
     }
 
     @Override
     public ProductResponse sortProductByGender(String gender, Integer pageNumber, Integer pageSize,
-            String sortBy, String sortOrder) {
-        Sort sortByAndOrder = sortOrder.equalsIgnoreCase("asc")
-                ? Sort.by().ascending()
-                : Sort.by().descending();
-        Gender GenderEnum = Gender.valueOf(gender.toUpperCase());
-        PageRequest pageDetails = PageRequest.of(pageNumber, pageSize, sortByAndOrder);
-        Page<Product> pageProducts = productRepository.findByGender(GenderEnum, pageDetails);
-
-        List<Product> products = pageProducts.getContent();
-        List<ProductDTO> productDTOs = products.stream()
-                .map(product -> modelMapper.map(product, ProductDTO.class))
-                .toList();
-        ProductResponse productResponse = new ProductResponse();
-        productResponse.setContent(productDTOs);
-        productResponse.setPageNumber(pageProducts.getNumber());
-        productResponse.setPageSize(pageProducts.getSize());
-        productResponse.setTotalElements(pageProducts.getTotalElements());
-        productResponse.setTotalPages(pageProducts.getTotalPages());
-        productResponse.setLastPage(pageProducts.isLast());
-        return productResponse;
+                                               String sortBy, String sortOrder) {
+        Gender genderEnum = Gender.valueOf(gender.toUpperCase());
+        Page<Product> page = productRepository.findByGender(
+                genderEnum,
+                buildPage(pageNumber, pageSize, sortBy, sortOrder));
+        return buildResponse(page);
     }
 
-    @Override
-    public String deleteProduct(Long productId) {
-        Product productFromDB=productRepository.findById(productId)
-                             .orElseThrow(()-> new RuntimeException("No Product found with ProductId: "+productId));
-         productRepository.delete(productFromDB);
-         return "Product deleted Successfully";
-    }
+    // ---------- Update ----------
 
     @Override
+    @Transactional
     public ProductDTO updateProduct(Long productId, ProductDTO productDTO) {
-         Product productFromDB=productRepository.findById(productId)
-                             .orElseThrow(()-> new RuntimeException("No Product found with ProductId: "+productId));
-        Product product=modelMapper.map(productDTO, Product.class);
-        
-        productFromDB.setActive(true);
-        productFromDB.setCategory(product.getCategory());
-        productFromDB.setDescription(product.getDescription());
-        productFromDB.setGender(product.getGender());
-        productFromDB.setFragranceFamily(product.getFragranceFamily());
-        productFromDB.setImage(product.getImage());
-        productFromDB.setName(product.getName());
-        productFromDB.setSlug(product.getSlug());
-        productFromDB.setStock(product.getStock());
-        productFromDB.setMrp(product.getMrp());
-        productFromDB.setPrice(product.getPrice());
+        Product productFromDB = findProduct(productId);
 
-        Product saveProduct=productRepository.save(productFromDB);
+        productFromDB.setName(productDTO.getName());
+        productFromDB.setSlug(productDTO.getSlug());
+        productFromDB.setDescription(productDTO.getDescription());
+        productFromDB.setCategory(productDTO.getCategory());
+        productFromDB.setGender(productDTO.getGender());
+        productFromDB.setFragranceFamily(productDTO.getFragranceFamily());
+        productFromDB.setMrp(productDTO.getMrp());
+        productFromDB.setPrice(productDTO.getPrice());
+        productFromDB.setStock(productDTO.getStock());
 
-        return  modelMapper.map(saveProduct, ProductDTO.class);
+        if (productDTO.getActive() != null) {
+            productFromDB.setActive(productDTO.getActive());
+        }
+        // image is NOT touched here — use updateProductImage
+
+        Product savedProduct = productRepository.save(productFromDB);
+        return modelMapper.map(savedProduct, ProductDTO.class);
     }
-     @Override
+
+    @Override
+    @Transactional
     public ProductDTO updateProductImage(Long productId, MultipartFile image) throws IOException {
-        Product productFromDb = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("product not found"));
+        Product productFromDB = findProduct(productId);
 
         String fileName = fileService.uploadImage(path, image);
-        productFromDb.setImage(fileName);
+        productFromDB.setImage(fileName);
 
-        Product updatedProduct = productRepository.save(productFromDb);
-        return modelMapper.map(updatedProduct, ProductDTO.class);
+        Product savedProduct = productRepository.save(productFromDB);
+        return modelMapper.map(savedProduct, ProductDTO.class);
     }
 
-    
+    // ---------- Delete ----------
 
+    @Override
+    @Transactional
+    public String deleteProduct(Long productId) {
+        Product productFromDB = findProduct(productId);
+        productRepository.delete(productFromDB);
+        return "Product deleted successfully";
+    }
+
+    // ---------- Helpers ----------
+
+    private Product findProduct(Long productId) {
+        return productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product", "productId", productId));
+    }
+
+    private PageRequest buildPage(Integer pageNumber, Integer pageSize,
+                                  String sortBy, String sortOrder) {
+        Sort sort = sortOrder.equalsIgnoreCase("asc")
+                ? Sort.by(sortBy).ascending()
+                : Sort.by(sortBy).descending();
+        return PageRequest.of(pageNumber, pageSize, sort);
+    }
+
+    private ProductResponse buildResponse(Page<Product> page) {
+        List<ProductDTO> dtos = page.getContent().stream()
+                .map(product -> modelMapper.map(product, ProductDTO.class))
+                .toList();
+
+        return new ProductResponse(
+                dtos,
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.isLast());
+    }
 }

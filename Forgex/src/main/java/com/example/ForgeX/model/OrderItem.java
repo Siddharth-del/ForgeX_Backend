@@ -1,36 +1,33 @@
 package com.example.ForgeX.model;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import jakarta.persistence.*;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
 @Table(name = "order_items")
+@Getter
+@Setter
+@NoArgsConstructor
 public class OrderItem {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long orderItemId;
 
     @ManyToOne
-    @JoinColumn(name="product_id")
-    private Product product;
-
-    @ManyToOne
     @JoinColumn(name = "order_id")
     private Order order;
 
-    private Integer quantity;
-    private double discount;
-    private double orderProductPrice;
+    @ManyToOne
+    @JoinColumn(name = "product_id")
+    private Product product;
 
+    // Snapshots — stay correct even if the product changes later
+    private String productName;
+    private Integer quantity;
+    private Long unitPrice;     // paise
+    private Long mrp;           // paise
+    private Long lineTotal;     // unitPrice × quantity
 }

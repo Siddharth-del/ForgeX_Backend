@@ -5,13 +5,14 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Data
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 public class OrderItemDTO {
     private Long orderItemId;
-    private ProductDTO product;
-
+    private Long productId;
+    private String productName;
     private Integer quantity;
-    private double discount;
-    private double orderProductPrice;
+    private Long unitPrice;     // paise
+    private Long mrp;           // paise
+    private Long lineTotal;     // paise
 }

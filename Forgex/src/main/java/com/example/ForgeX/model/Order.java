@@ -1,53 +1,66 @@
 package com.example.ForgeX.model;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-import jakarta.persistence.CascadeType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.OneToOne;
-import jakarta.persistence.Table;
-import jakarta.validation.constraints.Email;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import jakarta.persistence.*;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
-@Table(name="orders")
-@Data
-@AllArgsConstructor
+@Table(name = "orders")
+@Getter
+@Setter
 @NoArgsConstructor
 public class Order {
-     @Id
-     @GeneratedValue(strategy = GenerationType.IDENTITY)
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long orderId;
-     
-    @Email
+
     @Column(nullable = false)
     private String email;
 
-    @OneToMany(mappedBy = "order",cascade = {CascadeType.PERSIST,CascadeType.MERGE})
-    private List<OrderItem> orderItems=new ArrayList<>();
-   
-    private LocalDate orderDate;
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OrderItem> orderItems = new ArrayList<>();
 
-     @OneToOne
+    @ManyToOne
+    @JoinColumn(name = "address_id")
+    private Address address;
+
+    @OneToOne(cascade = CascadeType.ALL)
     @JoinColumn(name = "payment_id")
     private Payment payment;
 
-    private Double totalAmount;
-    private String orderStatus;
+    // Money — all in paise
+    private Long subtotal;
+    private Long discount;
+    private Long shipping;
+    private Long total;
 
-    @ManyToOne
-    @JoinColumn(name="address_id")
-    private Address address;
-    
+    private String couponCode;
+
+    @Enumerated(EnumType.STRING)
+    private OrderStatus status;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentMethod paymentMethod;
+
+    @Column(unique = true)
+    private String razorpayOrderId;
+
+    private LocalDateTime createdAt;
+    private LocalDateTime paidAt;
+
+    @PrePersist
+    void onCreate() {
+        createdAt = LocalDateTime.now();
+    }
+
+    public void addItem(OrderItem item) {
+        item.setOrder(this);
+        orderItems.add(item);
+    }
 }

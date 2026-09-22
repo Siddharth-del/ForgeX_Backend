@@ -1,11 +1,11 @@
 package com.example.ForgeX.service;
 
-import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,113 +13,97 @@ import com.example.ForgeX.dto.OrderDTO;
 import com.example.ForgeX.dto.OrderItemDTO;
 import com.example.ForgeX.exceptions.APIException;
 import com.example.ForgeX.exceptions.ResourceNotFoundException;
-import com.example.ForgeX.model.*;
-import com.example.ForgeX.repository.*;
+import com.example.ForgeX.model.Order;
+import com.example.ForgeX.model.OrderItem;
+import com.example.ForgeX.model.OrderStatus;
+import com.example.ForgeX.repository.OrderRepository;
 
 @Service
+@Transactional(readOnly = true)
 public class OrderServiceImpl implements OrderService {
 
-    @Autowired private CartRepository cartRepository;
-    @Autowired private AddressRepository addressRepository;
-    @Autowired private OrderItemRepository orderItemRepository;
-    @Autowired private OrderRepository orderRepository;
-    @Autowired private PaymentRepository paymentRepository;
-    @Autowired private ProductRepository productRepository;
-    @Autowired private ModelMapper modelMapper;
+    @Autowired
+    private OrderRepository orderRepository;
+
+    /** Which status an admin may move an order to, from each status. */
+    private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED = Map.of(
+            OrderStatus.PAID,      Set.of(OrderStatus.CONFIRMED, OrderStatus.CANCELLED),
+            OrderStatus.CONFIRMED, Set.of(OrderStatus.SHIPPED, OrderStatus.CANCELLED),
+            OrderStatus.SHIPPED,   Set.of(OrderStatus.DELIVERED)
+    );
+
+    @Override
+    public List<OrderDTO> getMyOrders(String email) {
+        return orderRepository.findByEmailOrderByCreatedAtDesc(email).stream()
+                .map(this::toDTO)
+                .toList();
+    }
+
+    @Override
+    public OrderDTO getMyOrder(String email, Long orderId) {
+        Order order = find(orderId);
+        if (!order.getEmail().equals(email)) {
+            // Same message as "not found" so users can't probe other people's order ids
+            throw new ResourceNotFoundException("Order", "orderId", orderId);
+        }
+        return toDTO(order);
+    }
+
+    @Override
+    public List<OrderDTO> getAllOrders() {
+        return orderRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt")).stream()
+                .map(this::toDTO)
+                .toList();
+    }
 
     @Override
     @Transactional
-    public OrderDTO placeOrder(String emailId, Long addressId, String paymentMethod,
-                               String pgName, String pgPaymentId,
-                               String pgStatus, String pgResponseMessage) {
+    public OrderDTO updateStatus(Long orderId, OrderStatus newStatus) {
+        Order order = find(orderId);
+        Set<OrderStatus> allowed = ALLOWED.getOrDefault(order.getStatus(), Set.of());
 
-        // 1. Load and validate cart
-        Cart cart = cartRepository.findCartByEmail(emailId);
-        if (cart == null) {
-            throw new ResourceNotFoundException("Cart", "email", emailId);
+        if (!allowed.contains(newStatus)) {
+            throw new APIException("Cannot move order from " + order.getStatus() + " to " + newStatus);
         }
-        List<CartItem> cartItems = new ArrayList<>(cart.getCartItems());   // copy
-        if (cartItems.isEmpty()) {
-            throw new APIException("Cart is empty");
-        }
+        order.setStatus(newStatus);
+        return toDTO(order);
+    }
 
-        // 2. Load address and check it belongs to this user
-        Address address = addressRepository.findById(addressId)
-                .orElseThrow(() -> new ResourceNotFoundException("Address", "addressId", addressId));
-        if (address.getUser() == null || !emailId.equals(address.getUser().getEmail())) {
-            throw new APIException("Address does not belong to this user");
-        }
+    // ---------- helpers ----------
 
-        // 3. Check payment status (temporary — replace with Razorpay signature check)
-        if (!"COD".equalsIgnoreCase(paymentMethod) && !"SUCCESS".equalsIgnoreCase(pgStatus)) {
-            throw new APIException("Payment not successful");
-        }
+    private Order find(Long orderId) {
+        return orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", "orderId", orderId));
+    }
 
-        // 4. Check stock for every item before changing anything
-        for (CartItem item : cartItems) {
-            Product product = item.getProduct();
-            if (!Boolean.TRUE.equals(product.getActive())) {
-                throw new APIException(product.getName() + " is no longer available");
-            }
-            if (product.getStock() == null || product.getStock() < item.getQuantity()) {
-                throw new APIException("Only " + product.getStock() + " left of " + product.getName());
-            }
-        }
+    private OrderDTO toDTO(Order o) {
+        OrderDTO dto = new OrderDTO();
+        dto.setOrderId(o.getOrderId());
+        dto.setEmail(o.getEmail());
+        dto.setStatus(o.getStatus());
+        dto.setPaymentMethod(o.getPaymentMethod());
+        dto.setPaymentStatus(o.getPayment() != null ? o.getPayment().getStatus() : null);
+        dto.setSubtotal(o.getSubtotal());
+        dto.setDiscount(o.getDiscount());
+        dto.setShipping(o.getShipping());
+        dto.setTotal(o.getTotal());
+        dto.setCouponCode(o.getCouponCode());
+        dto.setAddressId(o.getAddress() != null ? o.getAddress().getAddressId() : null);
+        dto.setCreatedAt(o.getCreatedAt());
+        dto.setPaidAt(o.getPaidAt());
+        dto.setOrderItems(o.getOrderItems().stream().map(this::toItemDTO).toList());
+        return dto;
+    }
 
-        // 5. Create order
-        Order order = new Order();
-        order.setEmail(emailId);
-        order.setOrderDate(LocalDate.now());
-        order.setOrderStatus("ORDER_ACCEPTED");
-        order.setAddress(address);
-
-        Payment payment = new Payment(paymentMethod, pgPaymentId, pgStatus, pgResponseMessage, pgName);
-        payment.setOrder(order);
-        payment = paymentRepository.save(payment);
-        order.setPayment(payment);
-
-        Order savedOrder = orderRepository.save(order);
-
-        // 6. Create order items from CURRENT product price, reduce stock
-        List<OrderItem> orderItems = new ArrayList<>();
-        double total = 0;
-
-        for (CartItem item : cartItems) {
-            Product product = item.getProduct();
-            int quantity = item.getQuantity();
-
-            OrderItem orderItem = new OrderItem();
-            orderItem.setProduct(product);
-            orderItem.setQuantity(quantity);
-            orderItem.setOrderProductPrice(product.getPrice());
-            orderItem.setDiscount(product.getDiscount());
-            orderItem.setOrder(savedOrder);
-            orderItems.add(orderItem);
-
-            total += product.getPrice() * quantity;
-
-            product.setStock(product.getStock() - quantity);
-            productRepository.save(product);
-        }
-
-        orderItems = orderItemRepository.saveAll(orderItems);
-
-        savedOrder.setTotalAmount(total);
-        orderRepository.save(savedOrder);
-
-        // 7. Empty the cart (after the loop, not during it)
-        cart.getCartItems().clear();
-        cart.setTotalPrice(0.0);
-        cartRepository.save(cart);
-
-        // 8. Build response
-        OrderDTO orderDTO = modelMapper.map(savedOrder, OrderDTO.class);
-        List<OrderItemDTO> itemDTOs = orderItems.stream()
-                .map(i -> modelMapper.map(i, OrderItemDTO.class))
-                .toList();
-        orderDTO.setOrderItems(new ArrayList<>(itemDTOs));
-        orderDTO.setAddressId(addressId);
-
-        return orderDTO;
+    private OrderItemDTO toItemDTO(OrderItem i) {
+        OrderItemDTO dto = new OrderItemDTO();
+        dto.setOrderItemId(i.getOrderItemId());
+        dto.setProductId(i.getProduct() != null ? i.getProduct().getProductId() : null);
+        dto.setProductName(i.getProductName());
+        dto.setQuantity(i.getQuantity());
+        dto.setUnitPrice(i.getUnitPrice());
+        dto.setMrp(i.getMrp());
+        dto.setLineTotal(i.getLineTotal());
+        return dto;
     }
 }

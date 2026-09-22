@@ -1,54 +1,52 @@
 package com.example.ForgeX.model;
 
+import java.time.LocalDateTime;
 
-
-import jakarta.persistence.CascadeType;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.OneToOne;
-import jakarta.persistence.Table;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import jakarta.persistence.*;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
-@Table(name="payments")
-@Data
-@AllArgsConstructor
+@Table(name = "payments")
+@Getter
+@Setter
 @NoArgsConstructor
 public class Payment {
-     @Id
+
+    @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long paymentId;
 
-    @OneToOne(mappedBy = "payment",cascade = {CascadeType.MERGE,CascadeType.PERSIST})
+    @OneToOne(mappedBy = "payment")
     private Order order;
-    
-    @NotBlank
-    @Size(min=4, message = "Payment method must contain atleast 4 characters")
-    private String paymentMethod;
 
-    private String pgPaymentId;
-    private String pgStatus;
-    private String pgResponseMessage;
-    private String pgName;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentMethod method;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentStatus status;
 
-    
+    private Long amount;                 // paise
 
-    public Payment(String paymentMethod,String  pgPaymentId, String pgStatus, String pgResponseMessage, String pgName){
-          this.paymentMethod=paymentMethod;
-          this.pgPaymentId=pgPaymentId;
-          this.pgStatus=pgStatus;
-          this.pgResponseMessage=pgResponseMessage;
-          this.pgName=pgName; 
+    private String razorpayOrderId;
+    private String razorpayPaymentId;
+    private String razorpaySignature;
+    private String razorpayRefundId;
+    private String failureReason;
+
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    void onCreate() {
+        createdAt = updatedAt = LocalDateTime.now();
     }
 
-
-    
-    
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }

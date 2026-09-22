@@ -1,6 +1,5 @@
 package com.example.ForgeX.util;
 
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -14,32 +13,20 @@ import com.example.ForgeX.repository.UserRepository;
 public class AuthUtil {
 
     @Autowired
-    UserRepository userRepository;
+    private UserRepository userRepository;
 
-    public String loggedInEmail(){
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        User user = userRepository.findByUserName(authentication.getName())
-                .orElseThrow(() -> new UsernameNotFoundException("User Not Found with username: " + authentication.getName()));
-
-        return user.getEmail();
+    public User loggedInUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String email = auth.getName();          // email, because getUsername() returns email
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
     }
 
-    public Long loggedInUserId(){
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        User user = userRepository.findByUserName(authentication.getName())
-                .orElseThrow(() -> new UsernameNotFoundException("User Not Found with username: " + authentication.getName()));
-
-        return user.getUserId();
+    public String loggedInEmail() {
+        return loggedInUser().getEmail();
     }
 
-    public User loggedInUser(){
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        User user = userRepository.findByUserName(authentication.getName())
-                .orElseThrow(() -> new UsernameNotFoundException("User Not Found with username: " + authentication.getName()));
-        return user;
-
+    public Long loggedInUserId() {
+        return loggedInUser().getUserId();
     }
-
-
 }
