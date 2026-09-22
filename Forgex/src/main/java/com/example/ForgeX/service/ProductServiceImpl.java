@@ -49,8 +49,8 @@ public class ProductServiceImpl implements ProductService {
 
     public ProductResponse getAllProducts(Integer pageNumber, Integer pageSize, String sortBy, String sortOrder) {
         Sort sortByAndOrder = sortOrder.equalsIgnoreCase("asc")
-                ? Sort.by().ascending()
-                : Sort.by().descending();
+                ? Sort.by(sortBy).ascending()
+                : Sort.by(sortBy).descending();
         PageRequest pageDetails = PageRequest.of(pageNumber, pageSize, sortByAndOrder);
         Page<Product> pageProducts = productRepository.findAll(pageDetails);
 
@@ -155,7 +155,7 @@ public class ProductServiceImpl implements ProductService {
                              .orElseThrow(()-> new RuntimeException("No Product found with ProductId: "+productId));
         Product product=modelMapper.map(productDTO, Product.class);
         
-        productFromDB.setActive(productDTO.getActive());
+        productFromDB.setActive(true);
         productFromDB.setCategory(product.getCategory());
         productFromDB.setDescription(product.getDescription());
         productFromDB.setGender(product.getGender());

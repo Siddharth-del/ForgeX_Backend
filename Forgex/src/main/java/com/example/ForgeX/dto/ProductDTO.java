@@ -1,36 +1,30 @@
 package com.example.ForgeX.dto;
 
+import com.example.ForgeX.model.Category;
 import com.example.ForgeX.model.FragranceFamily;
 import com.example.ForgeX.model.Gender;
 
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-@Data 
-@AllArgsConstructor 
-@NoArgsConstructor 
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class ProductDTO {
-    
+
     private Long productId;
     private String name;
     private String slug;
     private String description;
-   
-    private String category;
 
-
-    private String gender;
-
+    private Category category;
+    private Gender gender;
     private FragranceFamily fragranceFamily;
 
-    private Long mrp;     // original price
-    private Long price;   // selling price
-    private Integer discount;
+    private Long mrp;          // original price, in paise
+    private Long price;        // selling price, in paise
+    private Integer discount;  // calculated, never sent by client
 
     private Integer stock;
     private String image;
