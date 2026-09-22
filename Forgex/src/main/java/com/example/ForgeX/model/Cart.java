@@ -4,7 +4,9 @@ package com.example.ForgeX.model;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,8 +24,13 @@ public class Cart {
     @OneToOne
     @JoinColumn(name="user_id")
     private  User user;
-@OneToMany(mappedBy = "cart", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE}, orphanRemoval = true)
-private List<CartItem> cartItems = new ArrayList<>();
+
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @OneToMany(mappedBy = "cart", cascade = { CascadeType.PERSIST, CascadeType.MERGE,
+            CascadeType.REMOVE }, orphanRemoval = true)
+    private List<CartItem> cartItems = new ArrayList<>();
+
 
     private Double totalPrice=0.0;
 

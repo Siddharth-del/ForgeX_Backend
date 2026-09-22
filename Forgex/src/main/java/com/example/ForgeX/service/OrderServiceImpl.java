@@ -25,7 +25,7 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private OrderRepository orderRepository;
 
-    /** Which status an admin may move an order to, from each status. */
+  
     private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED = Map.of(
             OrderStatus.PAID,      Set.of(OrderStatus.CONFIRMED, OrderStatus.CANCELLED),
             OrderStatus.CONFIRMED, Set.of(OrderStatus.SHIPPED, OrderStatus.CANCELLED),
@@ -69,41 +69,41 @@ public class OrderServiceImpl implements OrderService {
         return toDTO(order);
     }
 
-    // ---------- helpers ----------
+  
 
     private Order find(Long orderId) {
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", "orderId", orderId));
     }
 
-    private OrderDTO toDTO(Order o) {
+    private OrderDTO toDTO(Order order) {
         OrderDTO dto = new OrderDTO();
-        dto.setOrderId(o.getOrderId());
-        dto.setEmail(o.getEmail());
-        dto.setStatus(o.getStatus());
-        dto.setPaymentMethod(o.getPaymentMethod());
-        dto.setPaymentStatus(o.getPayment() != null ? o.getPayment().getStatus() : null);
-        dto.setSubtotal(o.getSubtotal());
-        dto.setDiscount(o.getDiscount());
-        dto.setShipping(o.getShipping());
-        dto.setTotal(o.getTotal());
-        dto.setCouponCode(o.getCouponCode());
-        dto.setAddressId(o.getAddress() != null ? o.getAddress().getAddressId() : null);
-        dto.setCreatedAt(o.getCreatedAt());
-        dto.setPaidAt(o.getPaidAt());
-        dto.setOrderItems(o.getOrderItems().stream().map(this::toItemDTO).toList());
+        dto.setOrderId(order.getOrderId());
+        dto.setEmail(order.getEmail());
+        dto.setStatus(order.getStatus());
+        dto.setPaymentMethod(order.getPaymentMethod());
+        dto.setPaymentStatus(order.getPayment() != null ? order.getPayment().getStatus() : null);
+        dto.setSubtotal(order.getSubtotal());
+        dto.setDiscount(order.getDiscount());
+        dto.setShipping(order.getShipping());
+        dto.setTotal(order.getTotal());
+        dto.setCouponCode(order.getCouponCode());
+        dto.setAddressId(order.getAddress() != null ? order.getAddress().getAddressId() : null);
+        dto.setCreatedAt(order.getCreatedAt());
+        dto.setPaidAt(order.getPaidAt());
+        dto.setOrderItems(order.getOrderItems().stream().map(this::toItemDTO).toList());
         return dto;
     }
 
-    private OrderItemDTO toItemDTO(OrderItem i) {
+    private OrderItemDTO toItemDTO(OrderItem item) {
         OrderItemDTO dto = new OrderItemDTO();
-        dto.setOrderItemId(i.getOrderItemId());
-        dto.setProductId(i.getProduct() != null ? i.getProduct().getProductId() : null);
-        dto.setProductName(i.getProductName());
-        dto.setQuantity(i.getQuantity());
-        dto.setUnitPrice(i.getUnitPrice());
-        dto.setMrp(i.getMrp());
-        dto.setLineTotal(i.getLineTotal());
+        dto.setOrderItemId(item.getOrderItemId());
+        dto.setProductId(item.getProduct() != null ? item.getProduct().getProductId() : null);
+        dto.setProductName(item.getProductName());
+        dto.setQuantity(item.getQuantity());
+        dto.setUnitPrice(item.getUnitPrice());
+        dto.setMrp(item.getMrp());
+        dto.setLineTotal(item.getLineTotal());
         return dto;
     }
 }

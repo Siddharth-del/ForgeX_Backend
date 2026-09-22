@@ -22,6 +22,8 @@ public class ProductDTO {
     private Gender gender;
     private FragranceFamily fragranceFamily;
 
+    private Integer quantity;   // only filled in cart responses; null everywhere else
+
     private Long mrp;          // original price, in paise
     private Long price;        // selling price, in paise
     private Integer discount;  // calculated, never sent by client

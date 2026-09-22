@@ -12,7 +12,6 @@ public class RazorpayWebhookController {
 
     @Autowired private CheckoutService checkoutService;
 
-    /** Raw String body — signature is computed over the exact bytes Razorpay sent. */
     @PostMapping("/razorpay")
     public ResponseEntity<Void> razorpay(@RequestBody String payload,
                                          @RequestHeader(value = "X-Razorpay-Signature", required = false) String signature) {

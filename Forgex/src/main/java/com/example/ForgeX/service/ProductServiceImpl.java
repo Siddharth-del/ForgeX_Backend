@@ -37,8 +37,7 @@ public class ProductServiceImpl implements ProductService {
     @Value("${project.image}")
     private String path;
 
-    // ---------- Create ----------
-
+    
     @Override
     @Transactional
     public ProductDTO addProduct(ProductDTO productDTO) {
@@ -50,7 +49,7 @@ public class ProductServiceImpl implements ProductService {
         return modelMapper.map(savedProduct, ProductDTO.class);
     }
 
-    // ---------- Read ----------
+   
 
     @Override
     public ProductResponse getAllProducts(Integer pageNumber, Integer pageSize,
@@ -89,7 +88,7 @@ public class ProductServiceImpl implements ProductService {
         return buildResponse(page);
     }
 
-    // ---------- Update ----------
+  
 
     @Override
     @Transactional
@@ -109,7 +108,7 @@ public class ProductServiceImpl implements ProductService {
         if (productDTO.getActive() != null) {
             productFromDB.setActive(productDTO.getActive());
         }
-        // image is NOT touched here — use updateProductImage
+        
 
         Product savedProduct = productRepository.save(productFromDB);
         return modelMapper.map(savedProduct, ProductDTO.class);
@@ -127,7 +126,7 @@ public class ProductServiceImpl implements ProductService {
         return modelMapper.map(savedProduct, ProductDTO.class);
     }
 
-    // ---------- Delete ----------
+   
 
     @Override
     @Transactional
@@ -137,7 +136,6 @@ public class ProductServiceImpl implements ProductService {
         return "Product deleted successfully";
     }
 
-    // ---------- Helpers ----------
 
     private Product findProduct(Long productId) {
         return productRepository.findById(productId)

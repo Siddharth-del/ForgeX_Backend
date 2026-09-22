@@ -23,10 +23,6 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Page<Product> findByGender(Gender genderEnum, PageRequest pageDetails);
 
-    // Page<Product> findByCategory(String upperCase, PageRequest pageDetails);
-    /**
-     * Atomic: only succeeds if enough stock. Returns 1 on success, 0 if not enough.
-     */
     @Modifying
     @Query("UPDATE Product p SET p.stock = p.stock - :qty WHERE p.productId = :id AND p.stock >= :qty")
     int decrementStock(@Param("id") Long productId, @Param("qty") int qty);

@@ -16,7 +16,6 @@ import jakarta.persistence.LockModeType;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
-    /** Row lock so verify + webhook arriving together can't both process the order. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT o FROM Order o WHERE o.razorpayOrderId = :rzpOrderId")
     Optional<Order> findByRazorpayOrderIdForUpdate(@Param("rzpOrderId") String rzpOrderId);

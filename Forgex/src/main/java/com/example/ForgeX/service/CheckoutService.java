@@ -337,7 +337,7 @@ public class CheckoutService {
         return cart;
     }
 
-    /** Single place where money is calculated — used by preview and checkout. */
+   
     private PriceBreakdown calculate(List<CartItem> items, String couponCode) {
         long subtotal = 0, mrpTotal = 0;
         for (CartItem ci : items) {

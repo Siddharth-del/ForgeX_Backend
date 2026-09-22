@@ -88,7 +88,6 @@ public class AuthController {
         User user = new User(signUpRequest.getUsername(), email,
                 encoder.encode(signUpRequest.getPassword()));
 
-        // Public signup is ALWAYS a normal user. Admins are created by the seed or by another admin.
         Role userRole = roleRepository.findByRoleName(AppRole.ROLE_USER)
                 .orElseThrow(() -> new RuntimeException("ROLE_USER not found"));
         user.setRoles(Set.of(userRole));

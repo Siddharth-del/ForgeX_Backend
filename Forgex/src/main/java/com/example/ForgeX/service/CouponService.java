@@ -21,7 +21,7 @@ public class CouponService {
     @Autowired private CouponRepository couponRepository;
     @Autowired private ModelMapper modelMapper;
 
-    /** Result of trying a coupon: discount (0 if invalid) and a message for the UI. */
+   
     public record CouponResult(long discount, String code, String message) {
         static CouponResult none(String message) { return new CouponResult(0, null, message); }
     }
@@ -60,7 +60,7 @@ public class CouponService {
         return new CouponResult(discount, c.getCode(), "Applied");
     }
 
-    // ---------- Admin CRUD ----------
+    
 
     @Transactional
     public CouponDTO create(CouponDTO dto) {
