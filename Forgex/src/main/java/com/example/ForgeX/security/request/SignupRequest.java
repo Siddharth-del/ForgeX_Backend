@@ -3,9 +3,13 @@ package com.example.ForgeX.security.request;
 import java.util.Set;
 
 import jakarta.validation.constraints.*;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@AllArgsConstructor 
+@NoArgsConstructor 
 public class SignupRequest {
     @NotBlank
     @Size(min = 3, max = 20)
