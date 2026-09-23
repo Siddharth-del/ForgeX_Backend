@@ -5,7 +5,8 @@ export const UNAUTHORIZED_EVENT = 'forgex:unauthorized';
 
 const apiClient = axios.create({
   baseURL: (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, ''),
-  timeout: 15000,
+  // Render's free tier sleeps after 15 minutes and can take up to a minute to wake.
+  timeout: 60000,
   withCredentials: true, // backend also sets the JWT cookie; harmless with Bearer
   headers: { Accept: 'application/json' },
 });
@@ -16,15 +17,37 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+let sessionCheck = null;
+
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error.response?.status;
     const url = error.config?.url || '';
-    // A 401 outside sign-in means the session is gone or expired.
+
     if (status === 401 && !url.includes('/api/auth/signin')) {
-      clearSession();
-      window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+      if (url.includes('/api/auth/user')) {
+        // The session check itself failed: the token really is gone.
+        clearSession();
+        window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+      } else {
+        // A backend error can surface as 401 through Spring's /error forward.
+        // Confirm with the server before ending the session; parallel requests
+        // share one check.
+        sessionCheck ??= apiClient
+          .get('/api/auth/user')
+          .then(() => true)
+          .catch((e) => e.response?.status !== 401)
+          .finally(() => {
+            setTimeout(() => { sessionCheck = null; }, 0);
+          });
+
+        const stillValid = await sessionCheck;
+        if (!stillValid) {
+          clearSession();
+          window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+        }
+      }
     }
     return Promise.reject(error);
   },
