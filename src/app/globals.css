@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+/*
+ * ForgeX design tokens
+ * ---------------------------------------------------------------
+ * Two surfaces (ink stage, bone paper), one accent (ember), used sparingly.
+ * Radii are tight on purpose: glass and metal, not bubbles.
+ */
+@theme {
+  --color-ink: #0c0c0d;
+  --color-ink-2: #161618;
+  --color-ink-3: #232326;
+  --color-bone: #f3efe8;
+  --color-paper: #faf8f4;
+  --color-sand: #e7e1d6;
+  --color-stone: #7d776e;
+  --color-smoke: #a8a39a;
+  --color-line: #e3ddd2;
+  --color-line-dark: #2a2a2e;
+  --color-ember: #c8102e;
+  --color-ember-deep: #9e0c24;
+  --color-ember-glow: #ff4a3d;
+  --color-brass: #b89a6a;
+  --color-ok: #2f7a55;
+  --color-warn: #a86a12;
+
+  --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-instrument), "Times New Roman", Georgia, serif;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+
+  --animate-marquee: marquee 40s linear infinite;
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+
+  @keyframes marquee {
+    from { transform: translate3d(0, 0, 0); }
+    to { transform: translate3d(-50%, 0, 0); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection {
+    background: var(--color-ember);
+    color: #fff;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ember);
+    outline-offset: 3px;
+  }
+  button, [role="button"] { cursor: pointer; }
+  /* Touch: no grey flash on tap, no double-tap-zoom delay on controls */
+  a, button, [role="button"], summary, label, select {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  /* Safety net: nothing may make the page scroll sideways on a phone.
+     `clip` (unlike `hidden`) keeps position: sticky working. */
+  html, body { overflow-x: clip; }
+  img, svg, video { max-width: 100%; }
+  button:disabled { cursor: not-allowed; }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+}
+
+@layer components {
+  /* Page gutter — the one horizontal rhythm used everywhere */
+  .container-x {
+    width: 100%;
+    max-width: 1440px;
+    margin-inline: auto;
+    /* Respect the notch / rounded corners in landscape on phones */
+    padding-left: max(1.25rem, env(safe-area-inset-left));
+    padding-right: max(1.25rem, env(safe-area-inset-right));
+  }
+  @media (min-width: 768px) {
+    .container-x {
+      padding-left: max(2rem, env(safe-area-inset-left));
+      padding-right: max(2rem, env(safe-area-inset-right));
+    }
+  }
+  @media (min-width: 1280px) { .container-x { padding-left: 3rem; padding-right: 3rem; } }
+
+  /* Uppercase micro-label used for eyebrows, meta and nav */
+  .eyebrow {
+    font-size: var(--text-2xs);
+    line-height: 1rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .display {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 0.95;
+  }
+
+  /* Underline that draws in from the left on hover */
+  .link-draw {
+    background-image: linear-gradient(currentColor, currentColor);
+    background-size: 0% 1px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    transition: background-size 0.5s var(--ease-out-expo);
+  }
+  .link-draw:hover, .link-draw:focus-visible { background-size: 100% 1px; }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--color-sand) 0%, #efe9df 50%, var(--color-sand) 100%);
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+  }
+
+  /* Fine film grain over dark stages; pure CSS, no image request */
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.08;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+}
+
+/* Space for fixed bottom bars on phones, including the iPhone home indicator */
+@utility pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
