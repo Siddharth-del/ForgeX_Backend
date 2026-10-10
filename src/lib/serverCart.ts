@@ -1,56 +1,102 @@
+
 /**
- * Makes the signed-in shopper's server cart (which checkout prices) match the bag on this device.
- * Problems the backend reports for a product (sold out, "Only 2 left", inactive) are collected
- * per product rather than aborting the whole sync.
+ * Synchronizes ordinary product lines with the signed-in shopper's server cart.
+ * Box lines are managed separately by the existing bundle-cart logic.
+ * Product-specific backend errors are collected without aborting the whole sync.
  */
 import { cartApi } from "@/lib/api/cart";
 import { ApiError } from "@/lib/api/client";
 import type { CartDTO } from "@/lib/api/types";
 import type { CartLine } from "@/lib/cart";
 
+type ProductLine = Extract<CartLine, { kind: "product" }>;
+
 export interface CartSyncResult {
   cart: CartDTO;
   issues: { productId: string; name: string; message: string }[];
 }
 
-export async function syncServerCart(lines: CartLine[]): Promise<CartSyncResult> {
-  const want = new Map(lines.map((l) => [Number(l.productId), l]));
+export async function syncServerCart(
+  lines: CartLine[],
+): Promise<CartSyncResult> {
+  // Only ordinary products have a top-level productId.
+  const productLines = lines.filter(
+    (line): line is ProductLine => line.kind === "product",
+  );
+
+  const want = new Map<number, ProductLine>(
+    productLines.map((line) => [Number(line.productId), line] as const),
+  );
+
   const issues: CartSyncResult["issues"] = [];
   let cart = await cartApi.get();
 
-  const attempt = async (line: CartLine | undefined, id: number, task: () => Promise<unknown>) => {
+  const attempt = async (
+    line: ProductLine | undefined,
+    id: number,
+    task: () => Promise<unknown>,
+  ) => {
     try {
       await task();
     } catch (e) {
-      if (e instanceof ApiError && (e.status === 400 || e.status === 404)) issues.push({ productId: String(id), name: line?.name ?? "A product", message: e.message });
-      else throw e;
+      if (e instanceof ApiError && (e.status === 400 || e.status === 404)) {
+        issues.push({
+          productId: String(id),
+          name: line?.name ?? "A product",
+          message: e.message,
+        });
+      } else {
+        throw e;
+      }
     }
   };
 
-  for (const sp of cart.products) {
-    const line = want.get(sp.productId);
-    const have = sp.quantity ?? 0;
+  for (const serverProduct of cart.products) {
+    const id = serverProduct.productId;
+    const line = want.get(id);
+    const have = serverProduct.quantity ?? 0;
+
     if (!line) {
-      await attempt(undefined, sp.productId, () => cartApi.remove(cart.cartId, sp.productId));
+      await attempt(undefined, id, () => cartApi.remove(cart.cartId, id));
     } else if (have > line.quantity) {
-      await attempt(line, sp.productId, async () => {
-        await cartApi.remove(cart.cartId, sp.productId);
-        await cartApi.add(sp.productId, line.quantity);
+      await attempt(line, id, async () => {
+        await cartApi.remove(cart.cartId, id);
+        await cartApi.add(id, line.quantity);
       });
     } else if (have < line.quantity) {
-      await attempt(line, sp.productId, () => cartApi.add(sp.productId, line.quantity - have));
+      await attempt(line, id, () =>
+        cartApi.add(id, line.quantity - have),
+      );
     }
-    want.delete(sp.productId);
+
+    want.delete(id);
   }
-  for (const [id, line] of want) await attempt(line, id, () => cartApi.add(id, line.quantity));
+
+  for (const [id, line] of want) {
+    await attempt(line, id, () => cartApi.add(id, line.quantity));
+  }
 
   cart = await cartApi.get();
-  // Anything still different after the sync is a problem the shopper has to resolve.
-  for (const l of lines) {
-    const sp = cart.products.find((p) => p.productId === Number(l.productId));
-    if ((sp?.quantity ?? 0) !== l.quantity && !issues.some((i) => i.productId === l.productId)) {
-      issues.push({ productId: l.productId, name: l.name, message: sp ? `Only ${sp.quantity} of ${l.name} could be reserved.` : `${l.name} couldn't be added.` });
+
+  // Check that each requested product matches its server-side quantity.
+  for (const line of productLines) {
+    const id = Number(line.productId);
+    const serverProduct = cart.products.find((p) => p.productId === id);
+
+    if (
+      (serverProduct?.quantity ?? 0) !== line.quantity &&
+      !issues.some((issue) => issue.productId === String(id))
+    ) {
+      issues.push({
+        productId: String(id),
+        name: line.name,
+        message: serverProduct
+          ? `Only ${serverProduct.quantity} of ${line.name} could be reserved.`
+          : `${line.name} couldn't be added.`,
+      });
     }
   }
+
   return { cart, issues };
 }
+
