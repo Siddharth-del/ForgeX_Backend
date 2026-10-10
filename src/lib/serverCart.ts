@@ -6,7 +6,7 @@
 import { cartApi } from "@/lib/api/cart";
 import { ApiError } from "@/lib/api/client";
 import type { CartDTO } from "@/lib/api/types";
-//import type { CartLine } from "@/types";
+import type { CartLine } from "@/lib/cart";
 
 export interface CartSyncResult {
   cart: CartDTO;
