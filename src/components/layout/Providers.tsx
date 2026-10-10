@@ -7,15 +7,30 @@ import { authApi } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { toast } from "@/store/toast";
 
-/** Client-side providers: motion preferences, rehydration of persisted cart/wishlist, and the signed-in session. */
+/** Client-side providers: motion preferences, the persisted wishlist, the signed-in session and its server cart. */
 export function Providers({ children }: { children: ReactNode }) {
   useEffect(() => {
-    void useCart.persist.rehydrate();
     void useWishlist.persist.rehydrate();
+    // Bags used to be kept on the device; the cart now lives on the account only.
+    try {
+      localStorage.removeItem("cosmic-cart-v2");
+    } catch {
+      /* storage unavailable */
+    }
   }, []);
   useSessionSync();
+  useServerCart();
 
   return <MotionConfig reducedMotion="user">{children}</MotionConfig>;
+}
+
+/** Loads the account's cart when someone signs in, and forgets it when they sign out (ForgeX: the query is enabled by the session). */
+function useServerCart() {
+  const token = useAuth((s) => s.token);
+  useEffect(() => {
+    useCart.getState().reset();
+    if (token) void useCart.getState().load();
+  }, [token]);
 }
 
 /** Keeps the stored login honest: checks it with the server on load, ends it when the token expires, and follows sign-in/out in other tabs. */
@@ -37,9 +52,9 @@ function useSessionSync() {
         if (useAuth.getState().token === token) setUser(u);
       })
       .catch((e: unknown) => {
-        // /api/auth/user answers 401/500 for a token the server no longer accepts. Anything else
-        // (offline, server asleep or down: 0/502/503/504) keeps the session for when it's back.
-        if (e instanceof ApiError && (e.status === 401 || e.status === 500) && useAuth.getState().token === token) clearSession("expired");
+        // /api/auth/user answers 401 for a token the server no longer accepts. Anything else
+        // (offline, a server error, server asleep or down) keeps the session for when it's back.
+        if (e instanceof ApiError && e.status === 401 && useAuth.getState().token === token) clearSession("expired");
       });
   }, []);
 

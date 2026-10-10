@@ -1,27 +1,31 @@
 import Image from "@/components/ui/Image";
 import { BoxBuilder } from "@/components/box/BoxBuilder";
 import { MaskLines } from "@/components/ui/Reveal";
-import { getProducts } from "@/lib/catalog";
+import { getBoxBundle, getProducts } from "@/lib/catalog";
 import { formatPrice } from "@/lib/format";
-import { site } from "@/lib/site";
+import { rupees } from "@/lib/api/types";
 import { redirect, useLoaderData } from "react-router";
 import { usePageMeta } from "@/hooks/usePageMeta";
 
-const steps = [
-  { t: "Choose three", d: "Mix 50 ml eaux de parfum and 6 ml attars as you like." },
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+/** The box size comes from the backend, so the first step says how many to choose. */
+const stepsFor = (count: number) => [
+  { t: `Choose ${NUMBER_WORDS[count] ?? count}`, d: "Mix 50 ml eaux de parfum and 6 ml attars as you like." },
   { t: "We box them", d: "Packed by hand in our espresso keepsake box with gold foil." },
   { t: "Wear, discover", d: "Live with each one for a week and find your signature." },
 ];
 
 export async function loader() {
-  // Bundle pricing ("any 3 for one price") isn't supported by the backend's checkout yet.
-  if (!site.features.buildYourBox) throw redirect("/collections/all");
-  return { products: await getProducts() };
+  // The box (size, price, rules) is defined on the backend; without an active one there's nothing to build.
+  const [box, products] = await Promise.all([getBoxBundle(), getProducts()]);
+  if (!box) throw redirect("/collections/all");
+  return { box, products };
 }
 
 export default function BuildYourBoxPage() {
-  const { products } = useLoaderData<typeof loader>();
-  usePageMeta("Build Your Own Box", `Choose any ${site.box.size} perfumes or attars for ${formatPrice(site.box.price)}.`);
+  const { box, products } = useLoaderData<typeof loader>();
+  const price = formatPrice(rupees(box.price));
+  usePageMeta(box.name, `Choose any ${box.itemCount} perfumes or attars for ${price}.`);
 
   return (
     <>
@@ -34,7 +38,7 @@ export default function BuildYourBoxPage() {
             </h1>
             <p className="mt-6 max-w-md text-[1rem] text-ivory/70">Choose your fragrances. Create your signature collection.</p>
             <p className="mt-8 font-display text-[clamp(2.2rem,4vw,3.2rem)] font-light uppercase text-gold-soft">
-              Any {site.box.size} for {formatPrice(site.box.price)}
+              Any {box.itemCount} for {price}
             </p>
           </div>
           <div className="relative aspect-[16/11] md:aspect-auto md:min-h-[32rem]">
@@ -44,7 +48,7 @@ export default function BuildYourBoxPage() {
       </section>
       <section className="border-b border-hair bg-sand">
         <ol className="container-site grid grid-cols-1 gap-6 py-8 md:grid-cols-3">
-          {steps.map((s, i) => (
+          {stepsFor(box.itemCount).map((s, i) => (
             <li key={s.t} className="flex gap-4">
               <span className="font-display text-3xl font-light italic text-gold-deep">{i + 1}</span>
               <div>
@@ -57,7 +61,7 @@ export default function BuildYourBoxPage() {
       </section>
       <section className="bg-ivory py-16 md:py-24">
         <div className="container-site max-w-6xl">
-          <BoxBuilder products={products} />
+          <BoxBuilder box={box} products={products} />
         </div>
       </section>
     </>

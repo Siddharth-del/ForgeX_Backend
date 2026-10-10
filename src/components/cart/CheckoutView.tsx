@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { Lock } from "lucide-react";
 import Link from "@/components/ui/Link";
@@ -10,22 +10,21 @@ import { FormStatus } from "@/components/ui/Field";
 import { errorMessage } from "@/lib/errors";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { addressApi, removeAddressError } from "@/lib/api/addresses";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, type ErrorKind } from "@/lib/api/client";
 import { checkoutApi } from "@/lib/api/checkout";
 import { orderApi } from "@/lib/api/orders";
-import { rupees, type AddressDTO, type CartDTO, type PriceBreakdown } from "@/lib/api/types";
+import type { AddressDTO, PriceBreakdown } from "@/lib/api/types";
+import { cartProblems, cartSignature, type Cart } from "@/lib/cart";
 import { formatPrice } from "@/lib/format";
 import { formatPaise } from "@/lib/orders";
 import { completePayment, type PayResult } from "@/lib/payOrder";
-import { bagSignature, clearPending, PAYMENT_WINDOW_MINUTES, readPending, savePending, type PendingPayment } from "@/lib/pendingPayment";
-import { syncServerCart, type CartSyncResult } from "@/lib/serverCart";
+import { clearPending, PAYMENT_WINDOW_MINUTES, readPending, savePending, type PendingPayment } from "@/lib/pendingPayment";
 import { site } from "@/lib/site";
 import { cn } from "@/lib/cn";
 import { useHydrated } from "@/hooks/useHydrated";
-import { cartSavings, cartSubtotal, useCart } from "@/store/cart";
+import { useCart } from "@/store/cart";
 import { useAuth } from "@/store/auth";
 import type { AuthUser } from "@/lib/api/auth";
-import type { CartLine } from "@/types";
 
 type Method = "RAZORPAY" | "COD";
 
@@ -34,17 +33,28 @@ const METHODS: { id: Method; label: string; hint: string }[] = [
   { id: "COD", label: "Cash on delivery", hint: "Pay when your order arrives" },
 ];
 
+/** A heading for a cart that couldn't be loaded, saying what kind of failure it was. */
+const LOAD_ERROR_TITLE: Record<ErrorKind, string> = {
+  session: "Please sign in again",
+  forbidden: "This account can't place orders",
+  "not-found": "We couldn't load your bag",
+  invalid: "We couldn't load your bag",
+  conflict: "Your bag changed in another window",
+  server: "Our server had a problem",
+  network: "You appear to be offline",
+};
+
 /**
- * Checkout against the ForgeX API:
- *  1. the bag is copied to the customer's server cart (the server prices the order, not this page);
+ * Checkout against the ForgeX API, from the shopper's server cart (as in the ForgeX frontend):
+ *  1. the cart shown is the one on the server — the one the order will be made from;
  *  2. the customer picks or adds a delivery address and may apply a coupon (server-validated);
- *  3. POST /api/checkout creates the order and reserves stock;
+ *  3. POST /api/checkout creates the order and reserves stock (the server prices it);
  *  4. COD orders are confirmed straight away; online orders open Razorpay, and the result is only
- *     accepted once the server has verified the payment signature (see lib/payOrder.ts).
+ *     accepted once the server has verified the payment signature (see lib/payOrder.ts). On payment
+ *     the server removes exactly the ordered lines from the cart.
  */
 export function CheckoutView() {
   const hydrated = useHydrated();
-  const lines = useCart((s) => s.lines);
   const user = useAuth((s) => s.user);
 
   if (!hydrated)
@@ -55,65 +65,50 @@ export function CheckoutView() {
       </div>
     );
 
-  if (!lines.length)
-    return (
-      <div className="container-site py-section">
-        <EmptyState title="Your bag is empty" body="Add a fragrance to continue to checkout." action={<ButtonLink href="/collections/all" arrow>Shop the collection</ButtonLink>} />
-      </div>
-    );
-
-  if (!user) return <SignInFirst lines={lines} />;
-  return <SignedInCheckout key={user.email} user={user} lines={lines} />;
+  if (!user) return <SignInFirst />;
+  return <SignedInCheckout key={user.email} user={user} />;
 }
 
 /* ------------------------------------------------------------------ signed out */
 
-function SignInFirst({ lines }: { lines: CartLine[] }) {
-  const subtotal = cartSubtotal(lines);
+function SignInFirst() {
   return (
-    <Layout
-      summary={
-        <Summary lines={lines}>
-          <Totals subtotal={subtotal} savings={cartSavings(lines)} estimate />
-        </Summary>
-      }
-    >
-      <h1 className="text-display-sm uppercase">Checkout</h1>
-      <div className="mt-10 border border-hair bg-sand/60 p-7 md:p-9">
-        <p className="label">Sign in to continue</p>
-        <p className="mt-4 max-w-prose text-[0.92rem] text-ink-muted">
-          Orders are placed from your {site.name} account, so you can follow delivery, download invoices and reorder later. Your bag is saved and will be waiting.
-        </p>
-        <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-          <ButtonLink href="/account?next=/checkout" size="lg" arrow className="sm:flex-1">
-            Sign in
-          </ButtonLink>
-          <ButtonLink href="/account?mode=signup&next=/checkout" variant="outline" size="lg" className="sm:flex-1">
-            Create account
-          </ButtonLink>
+    <div className="bg-ivory">
+      <div className="container-site max-w-3xl py-14 md:py-20">
+        <h1 className="text-display-sm uppercase">Checkout</h1>
+        <div className="mt-10 border border-hair bg-sand/60 p-7 md:p-9">
+          <p className="label">Sign in to continue</p>
+          <p className="mt-4 max-w-prose text-[0.92rem] text-ink-muted">
+            Your bag is saved to your {site.name} account, so you can check out on any device, follow delivery, download invoices and reorder later.
+          </p>
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+            <ButtonLink href="/account?next=/checkout" size="lg" arrow className="sm:flex-1">
+              Sign in
+            </ButtonLink>
+            <ButtonLink href="/account?mode=signup&next=/checkout" variant="outline" size="lg" className="sm:flex-1">
+              Create account
+            </ButtonLink>
+          </div>
         </div>
       </div>
-    </Layout>
+    </div>
   );
 }
 
 /* ------------------------------------------------------------------ signed in */
 
-type Sync = { state: "syncing" } | { state: "ready"; cart: CartDTO; issues: CartSyncResult["issues"] } | { state: "error"; message: string };
-
-function SignedInCheckout({ user, lines }: { user: AuthUser; lines: CartLine[] }) {
+function SignedInCheckout({ user }: { user: AuthUser }) {
   const navigate = useNavigate();
-  const signature = bagSignature(lines);
+  const { cart, status, error, pending: cartPending, load } = useCart();
 
-  /* server cart + price */
-  const [sync, setSync] = useState<Sync>({ state: "syncing" });
+  /* price */
   const [price, setPrice] = useState<PriceBreakdown | null>(null);
   const [priceError, setPriceError] = useState<string | null>(null);
+  const [priceAttempt, setPriceAttempt] = useState(0);
   const [couponInput, setCouponInput] = useState("");
   const [coupon, setCoupon] = useState<string | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponBusy, setCouponBusy] = useState(false);
-  const [syncAttempt, setSyncAttempt] = useState(0);
   const couponRef = useRef<string | null>(null);
   couponRef.current = coupon;
 
@@ -132,36 +127,41 @@ function SignedInCheckout({ user, lines }: { user: AuthUser; lines: CartLine[] }
   const [payResult, setPayResult] = useState<PayResult | null>(null);
   const busy = useRef(false);
 
-  // Copy the bag to the server cart (debounced while quantities change), then ask the server for the price.
+  // The cart as the server has it now.
   useEffect(() => {
+    void load();
+  }, [load]);
+
+  const signature = cart ? cartSignature(cart) : "";
+  const problems = cart ? cartProblems(cart) : [];
+
+  // The server's price for the cart shown, re-asked whenever the cart changes.
+  useEffect(() => {
+    if (!cart?.lines.length) {
+      setPrice(null);
+      return;
+    }
     let live = true;
-    setSync({ state: "syncing" });
     const t = setTimeout(async () => {
       try {
-        const res = await syncServerCart(useCart.getState().lines);
+        const p = await checkoutApi.preview(couponRef.current ?? undefined);
         if (!live) return;
-        setSync({ state: "ready", cart: res.cart, issues: res.issues });
-        try {
-          const p = await checkoutApi.preview(couponRef.current ?? undefined);
-          if (!live) return;
-          setPrice(p);
-          setPriceError(null);
-          if (couponRef.current && !p.couponCode) {
-            setCoupon(null);
-            setCouponError(p.couponMessage || "This coupon no longer applies.");
-          }
-        } catch (e) {
-          if (live) setPriceError(errorMessage(e));
+        setPrice(p);
+        setPriceError(null);
+        if (couponRef.current && !p.couponCode) {
+          setCoupon(null);
+          setCouponError(p.couponMessage || "This coupon no longer applies.");
         }
       } catch (e) {
-        if (live) setSync({ state: "error", message: errorMessage(e) });
+        if (live) setPriceError(errorMessage(e));
       }
-    }, 450);
+    }, 250);
     return () => {
       live = false;
       clearTimeout(t);
     };
-  }, [signature, syncAttempt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-price only when the cart's contents change
+  }, [signature, priceAttempt]);
 
   useEffect(() => {
     let live = true;
@@ -184,7 +184,7 @@ function SignedInCheckout({ user, lines }: { user: AuthUser; lines: CartLine[] }
     e.preventDefault();
     const code = couponInput.trim().toUpperCase();
     if (!code) return setCouponError("Enter a coupon code.");
-    if (sync.state !== "ready") return;
+    if (!cart?.lines.length) return;
     setCouponBusy(true);
     setCouponError(null);
     try {
@@ -225,44 +225,50 @@ function SignedInCheckout({ user, lines }: { user: AuthUser; lines: CartLine[] }
   };
 
   const address = addresses?.find((a) => a.addressId === selected) ?? null;
-  const issues = sync.state === "ready" ? sync.issues : [];
-  const ready = sync.state === "ready" && !issues.length && !!price && !!address && price.total > 0;
+  const cartBusy = cartPending.length > 0;
+  const ready = !!cart && cart.lines.length > 0 && !problems.length && !cartBusy && !!price && !!address && price.total > 0;
 
-  /** Checkout identity: a stored unpaid order is reused only for the same bag, address and coupon. */
-  const intent = `${signature}|a${selected ?? ""}|c${coupon ?? ""}`;
+  /** Checkout identity: a stored unpaid order is reused only for the same cart, address and coupon. */
+  const intentOf = (c: Cart) => `${cartSignature(c)}|a${selected ?? ""}|c${coupon ?? ""}`;
 
-  const finishPaid = useCallback(
+  /** The order is placed or paid: show the order. The server has already removed its lines from the cart. */
+  const finish = useCallback(
     (orderId: number) => {
       clearPending();
-      useCart.getState().clear();
+      void load();
       navigate(`/account/orders/${orderId}?placed=1`, { replace: true });
     },
-    [navigate],
+    [navigate, load],
   );
 
   const pay = async (p: PendingPayment) => {
     setPhase("paying");
     const r = await completePayment(p, { name: user.username, email: user.email, contact: address?.phoneNumber }, () => setPhase("verifying"));
-    if (r.kind === "paid") return finishPaid(r.orderId);
+    if (r.kind === "paid") return finish(r.orderId);
     if (r.kind === "closed") clearPending();
     setPayResult(r);
     setPhase("idle");
   };
 
   const placeOrder = async () => {
-    if (busy.current || !ready || !address) return;
+    if (busy.current || !ready || !address || !cart) return;
     busy.current = true;
     setPlaceError(null);
     setPayResult(null);
     setPhase("placing");
     try {
-      // Make sure the server cart still matches the bag the customer is looking at.
-      const fresh = await syncServerCart(useCart.getState().lines);
-      if (fresh.issues.length) {
-        setSync({ state: "ready", cart: fresh.cart, issues: fresh.issues });
+      // The order is made from the server cart: make sure it's the cart on screen, and still orderable.
+      const fresh = await load();
+      if (!fresh || !fresh.lines.length || cartProblems(fresh).length) {
         setPhase("idle");
         return;
       }
+      if (cartSignature(fresh) !== signature) {
+        setPlaceError("Your bag changed. Please check the total and place your order again.");
+        setPhase("idle");
+        return;
+      }
+      const intent = intentOf(fresh);
 
       if (method === "RAZORPAY") {
         // Reuse an unpaid order for this exact checkout instead of reserving stock twice.
@@ -272,7 +278,7 @@ function SignedInCheckout({ user, lines }: { user: AuthUser; lines: CartLine[] }
             .get(existing.orderId)
             .then((o) => o.status)
             .catch(() => null);
-          if (status === "PAID") return finishPaid(existing.orderId);
+          if (status === "PAID") return finish(existing.orderId);
           if (status === "PENDING_PAYMENT") return await pay(existing);
           clearPending();
         }
@@ -281,9 +287,7 @@ function SignedInCheckout({ user, lines }: { user: AuthUser; lines: CartLine[] }
       const res = await checkoutApi.place({ addressId: address.addressId, paymentMethod: method, couponCode: coupon ?? undefined });
 
       if (method === "COD") {
-        clearPending();
-        useCart.getState().clear();
-        navigate(`/account/orders/${res.orderId}?placed=1`, { replace: true });
+        finish(res.orderId);
         return;
       }
 
@@ -307,35 +311,75 @@ function SignedInCheckout({ user, lines }: { user: AuthUser; lines: CartLine[] }
     } catch (e) {
       setPlaceError(errorMessage(e));
       setPhase("idle");
-      // Stock or availability may have changed: refresh the server cart and price.
-      if (e instanceof ApiError && e.status === 400) setSyncAttempt((n) => n + 1);
+      // Stock, availability or the cart itself may have changed: refresh the cart and the price.
+      if (e instanceof ApiError && (e.status === 400 || e.status === 404 || e.status === 409)) {
+        void load();
+        setPriceAttempt((n) => n + 1);
+      }
     } finally {
       busy.current = false;
     }
   };
 
-  const acceptAvailable = () => {
-    if (sync.state !== "ready") return;
-    const server = new Map(sync.cart.products.map((p) => [String(p.productId), p.quantity ?? 0]));
-    const cart = useCart.getState();
-    for (const l of cart.lines) {
-      const q = server.get(l.productId) ?? 0;
-      if (q <= 0) cart.remove(l.key);
-      else if (q !== l.quantity) cart.setQuantity(l.key, q);
+  /** Lower every line that has too few in stock to what can be ordered (removing those with none). */
+  const acceptAvailable = async () => {
+    const store = useCart.getState();
+    for (const p of problems) {
+      const line = cart?.lines.find((l) => l.key === p.key);
+      if (!line) continue;
+      if (line.kind === "box") await (p.canOrder > 0 ? store.setBoxQuantity(line.cartItemId, p.canOrder) : store.removeBox(line.cartItemId));
+      else await (p.canOrder > 0 ? store.setQuantity(line.productId, p.canOrder) : store.remove(line.productId));
     }
+  };
+
+  const removeLine = (key: string) => {
+    const line = cart?.lines.find((l) => l.key === key);
+    if (!line) return;
+    const store = useCart.getState();
+    void (line.kind === "box" ? store.removeBox(line.cartItemId) : store.remove(line.productId));
   };
 
   const total = price ? formatPaise(price.total) : null;
   const working = phase !== "idle";
   const pendingHere = (() => {
     const p = readPending();
-    return p && p.bag === intent && p.email === user.email ? p : null;
+    return p && cart && p.bag === intentOf(cart) && p.email === user.email ? p : null;
   })();
+
+  /* ---------- page states */
+  if (!cart && status === "error") {
+    return (
+      <div className="container-site max-w-3xl py-14">
+        <h1 className="text-display-sm uppercase">Checkout</h1>
+        <Notice tone="error" title={LOAD_ERROR_TITLE[error?.kind ?? "server"]}>
+          <p>{error?.message}</p>
+          <button type="button" onClick={() => void load()} className="label mt-3 underline underline-offset-4">
+            Try again
+          </button>
+        </Notice>
+      </div>
+    );
+  }
+  if (!cart) {
+    return (
+      <div className="container-site grid grid-cols-1 gap-10 py-14 lg:grid-cols-2" aria-busy="true" aria-label="Loading your bag">
+        <Skeleton className="h-[30rem]" />
+        <Skeleton className="h-[20rem]" />
+      </div>
+    );
+  }
+  if (!cart.lines.length && phase === "idle") {
+    return (
+      <div className="container-site py-section">
+        <EmptyState title="Your bag is empty" body="Add a fragrance to continue to checkout." action={<ButtonLink href="/collections/all" arrow>Shop the collection</ButtonLink>} />
+      </div>
+    );
+  }
 
   return (
     <Layout
       summary={
-        <Summary lines={lines} cart={sync.state === "ready" ? sync.cart : undefined}>
+        <Summary cart={cart}>
           {price ? (
             <ServerTotals price={price} onRemoveCoupon={coupon ? removeCoupon : undefined} />
           ) : priceError ? (
@@ -369,7 +413,7 @@ function SignedInCheckout({ user, lines }: { user: AuthUser; lines: CartLine[] }
                 placeholder={coupon ? `${coupon} applied` : ""}
                 className={cn("h-11 min-w-0 flex-1 border bg-ivory px-4 text-[0.88rem] uppercase tracking-[0.12em] outline-none focus:border-espresso", couponError ? "border-[#9b3b2a]" : "border-espresso/20")}
               />
-              <Button type="submit" variant="outline" size="sm" className="h-11" disabled={couponBusy || sync.state !== "ready"} aria-busy={couponBusy}>
+              <Button type="submit" variant="outline" size="sm" className="h-11" disabled={couponBusy || !cart.lines.length} aria-busy={couponBusy}>
                 {couponBusy ? "Checking" : "Apply"}
               </Button>
             </div>
@@ -385,29 +429,37 @@ function SignedInCheckout({ user, lines }: { user: AuthUser; lines: CartLine[] }
       <h1 className="text-display-sm uppercase">Checkout</h1>
       <p className="mt-3 text-[0.85rem] text-ink-muted">Signed in as {user.email}</p>
 
-      {sync.state === "error" && (
-        <Notice tone="error" title="We couldn't prepare your order">
-          <p>{sync.message}</p>
-          <button type="button" onClick={() => setSyncAttempt((n) => n + 1)} className="label mt-3 underline underline-offset-4">
+      {error && (
+        <Notice tone="error" title={LOAD_ERROR_TITLE[error.kind]}>
+          <p>{error.message}</p>
+          <button type="button" onClick={() => void load()} className="label mt-3 underline underline-offset-4">
             Try again
           </button>
         </Notice>
       )}
-      {!!issues.length && (
+      {!!problems.length && (
         <Notice tone="error" title="Some items need your attention">
-          <ul className="space-y-1">
-            {issues.map((i) => (
-              <li key={i.productId}>{i.message}</li>
+          <ul className="space-y-2">
+            {problems.map((p) => (
+              <li key={p.key} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <span>{p.message}</span>
+                <button type="button" onClick={() => removeLine(p.key)} disabled={cartBusy} className="label shrink-0 text-[0.6rem] underline underline-offset-4 disabled:opacity-40">
+                  Remove from bag
+                </button>
+              </li>
             ))}
           </ul>
           <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-            <button type="button" onClick={acceptAvailable} className="label underline underline-offset-4">
-              Use available quantities
-            </button>
-            <button type="button" onClick={() => setSyncAttempt((n) => n + 1)} className="label underline underline-offset-4">
+            {problems.some((p) => p.canOrder > 0) && (
+              <button type="button" onClick={() => void acceptAvailable()} disabled={cartBusy} className="label underline underline-offset-4 disabled:opacity-40">
+                Use available quantities
+              </button>
+            )}
+            <button type="button" onClick={() => void load()} disabled={cartBusy} className="label underline underline-offset-4 disabled:opacity-40">
               Check again
             </button>
           </div>
+          <p className="mt-3 text-[0.75rem]">Nothing will be charged until every item in your bag can be ordered.</p>
         </Notice>
       )}
 
@@ -498,8 +550,8 @@ function SignedInCheckout({ user, lines }: { user: AuthUser; lines: CartLine[] }
                 : `${pendingHere ? "Resume payment" : "Pay securely"}${total ? ` · ${total}` : ""}`}
       </Button>
       <FormStatus error={placeError} pending={phase === "placing"} className="mt-4" />
-      {!ready && !working && sync.state === "ready" && !issues.length && (
-        <p className="mt-3 text-[0.78rem] text-ink-faint">{!address ? "Choose or add a delivery address to continue." : !price ? "Calculating your total…" : null}</p>
+      {!ready && !working && !problems.length && (
+        <p className="mt-3 text-[0.78rem] text-ink-faint">{cartBusy ? "Updating your bag…" : !address ? "Choose or add a delivery address to continue." : !price ? "Calculating your total…" : null}</p>
       )}
       <p className="mt-4 text-[0.75rem] leading-relaxed text-ink-faint">
         {method === "RAZORPAY"
@@ -555,65 +607,31 @@ function Layout({ children, summary }: { children: React.ReactNode; summary: Rea
   );
 }
 
-/** Bag lines; with a server cart, quantities and prices are the server's. */
-function Summary({ lines, cart, children }: { lines: CartLine[]; cart?: CartDTO; children: React.ReactNode }) {
-  const server = useMemo(() => new Map(cart?.products.map((p) => [String(p.productId), p]) ?? []), [cart]);
+/** The server cart's lines, with the server's prices. */
+function Summary({ cart, children }: { cart: Cart; children: React.ReactNode }) {
   return (
     <>
       <p className="label">Order summary</p>
       <ul className="mt-6 divide-y divide-[rgba(50,24,14,0.12)]">
-        {lines.map((l) => {
-          const sp = server.get(l.productId);
-          const qty = sp?.quantity ?? l.quantity;
-          const unit = sp?.price != null ? rupees(sp.price) : l.price;
-          return (
-            <li key={l.key} className="flex gap-4 py-4">
-              <div className="relative h-20 w-16 shrink-0 bg-sand">
-                <ProductPhoto src={l.image} alt={l.name} sizes="64px" compact />
-                <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-espresso px-1 text-[0.62rem] text-ivory tabular">{qty}</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-display text-[1.1rem] uppercase leading-tight">{l.name}</p>
-                {l.size && <p className="text-[0.75rem] text-ink-muted">{l.size}</p>}
-              </div>
-              <p className="text-[0.88rem] tabular">{formatPrice(unit * qty)}</p>
-            </li>
-          );
-        })}
+        {cart.lines.map((l) => (
+          <li key={l.key} className="flex gap-4 py-4">
+            <div className={cn("relative h-20 w-16 shrink-0", l.kind === "product" && l.world === "attar" ? "bg-espresso" : "bg-sand")}>
+              <ProductPhoto src={l.image ?? undefined} alt={l.name} dark={l.kind === "product" && l.world === "attar"} sizes="64px" compact />
+              <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-espresso px-1 text-[0.62rem] text-ivory tabular">{l.quantity}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-display text-[1.1rem] uppercase leading-tight">{l.name}</p>
+              {l.kind === "box" && <p className="text-[0.75rem] text-ink-muted">{l.contents.map((c) => (c.quantity > 1 ? `${c.quantity} × ${c.name}` : c.name)).join(" · ")}</p>}
+            </div>
+            <p className="text-[0.88rem] tabular">{formatPaise(l.lineTotal)}</p>
+          </li>
+        ))}
       </ul>
       {children}
       <Link href="/collections/all" className="label mt-6 inline-block underline-offset-4 hover:underline">
         Continue shopping
       </Link>
     </>
-  );
-}
-
-/** Local estimate, shown before sign-in (the server's price replaces it at checkout). */
-function Totals({ subtotal, savings, estimate }: { subtotal: number; savings: number; estimate?: boolean }) {
-  const shipping = subtotal >= site.freeShippingThreshold ? 0 : site.shippingFee;
-  return (
-    <dl className="mt-4 space-y-2 border-t border-hair pt-5 text-[0.88rem]">
-      <div className="flex justify-between">
-        <dt className="text-ink-muted">Subtotal</dt>
-        <dd className="tabular">{formatPrice(subtotal)}</dd>
-      </div>
-      <div className="flex justify-between">
-        <dt className="text-ink-muted">Shipping</dt>
-        <dd className="tabular">{shipping ? formatPrice(shipping) : "Complimentary"}</dd>
-      </div>
-      {savings > 0 && (
-        <div className="flex justify-between text-gold-deep">
-          <dt>You save</dt>
-          <dd className="tabular">{formatPrice(savings)}</dd>
-        </div>
-      )}
-      <div className="flex justify-between border-t border-hair pt-4 text-[1.05rem]">
-        <dt>{estimate ? "Estimated total" : "Total"}</dt>
-        <dd className="font-medium tabular">{formatPrice(subtotal + shipping)}</dd>
-      </div>
-      {estimate && <p className="pt-1 text-[0.72rem] text-ink-faint">Final price, coupons and shipping are confirmed at checkout. Inclusive of GST.</p>}
-    </dl>
   );
 }
 

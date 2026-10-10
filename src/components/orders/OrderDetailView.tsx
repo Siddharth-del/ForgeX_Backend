@@ -12,7 +12,7 @@ import { addressApi } from "@/lib/api/addresses";
 import { ApiError } from "@/lib/api/client";
 import { orderApi } from "@/lib/api/orders";
 import { invoiceAvailable, type AddressDTO, type OrderDTO, type OrderStatus } from "@/lib/api/types";
-import { formatDateTime, formatPaise, PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL } from "@/lib/orders";
+import { boxContents, formatDateTime, formatPaise, PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL } from "@/lib/orders";
 import { completePayment, type PayResult } from "@/lib/payOrder";
 import { clearPending, PAYMENT_WINDOW_MINUTES, readPending } from "@/lib/pendingPayment";
 import { cn } from "@/lib/cn";
@@ -54,13 +54,15 @@ export function OrderDetailView({ orderId }: { orderId: number }) {
     };
   }, [user, orderId, attempt, load]);
 
-  // Once the server says this order is paid (or settled), forget the pending payment and empty the bag it came from.
+  // Once the server says this order is paid (or settled), forget the pending payment and refresh the
+  // bag (on payment the server removes exactly the order's lines; anything added since stays).
   useEffect(() => {
     if (!order || order.status === "PENDING_PAYMENT") return;
     const pending = readPending();
     if (pending?.orderId === order.orderId) {
       clearPending();
-      if (order.status === "PAID") useCart.getState().clear();
+      // Paid: the server has taken the ordered lines out of the cart; show the cart it has now.
+      if (order.status === "PAID") void useCart.getState().load();
     }
   }, [order]);
 
@@ -208,9 +210,11 @@ function OrderItems({ order }: { order: OrderDTO }) {
     <ul className="divide-y divide-hair">
       {order.orderItems.map((i) => {
         const p = i.productId ? catalog.find((x) => x.productId === i.productId) : undefined;
+        const contents = boxContents(i);
+        const firstInBox = i.components?.[0]?.productId ? catalog.find((x) => x.productId === i.components?.[0]?.productId) : undefined;
         const photo = (
           <div className="relative h-24 w-[4.8rem] shrink-0 overflow-hidden bg-sand">
-            <ProductPhoto src={p?.images[0]?.src} alt={i.productName} sizes="80px" compact />
+            <ProductPhoto src={(p ?? firstInBox)?.images[0]?.src} alt={i.productName} sizes="80px" compact />
           </div>
         );
         return (
@@ -239,6 +243,7 @@ function OrderItems({ order }: { order: OrderDTO }) {
                   </>
                 ) : null}
               </p>
+              {contents && <p className="mt-1 text-[0.75rem] text-ink-muted">Contains {contents}</p>}
             </div>
             <p className="text-[0.9rem] tabular">{formatPaise(i.lineTotal)}</p>
           </li>
@@ -292,7 +297,7 @@ function PendingPaymentPanel({ order, phone, onPaid }: { order: OrderDTO; phone?
     setBusy(false);
     if (r.kind === "paid") {
       clearPending();
-      useCart.getState().clear();
+      void useCart.getState().load(); // the server removed exactly the ordered lines
       onPaid();
       return;
     }

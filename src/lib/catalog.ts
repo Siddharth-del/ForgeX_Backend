@@ -9,8 +9,9 @@
 import { categories as allCategories, collections } from "@/data/collections";
 import { journal } from "@/data/journal";
 import { testimonials } from "@/data/testimonials";
+import { BOX_SLUG, bundleApi } from "@/lib/api/bundles";
 import { fetchAllProducts } from "@/lib/api/products";
-import { rupees, type FragranceFamilyEnum, type ProductDTO } from "@/lib/api/types";
+import { rupees, type BundleDTO, type FragranceFamilyEnum, type ProductDTO } from "@/lib/api/types";
 import type { Collection, Product, ScentFamily } from "@/types";
 
 /* ------------------------------------------------------------------ mapping */
@@ -59,6 +60,24 @@ let cache: { at: number; promise: Promise<Product[]> } | null = null;
 /** Drop the cached list (after an admin edit, or to retry after an error). */
 export function invalidateCatalog() {
   cache = null;
+  boxCache = null;
+}
+
+let boxCache: { at: number; promise: Promise<BundleDTO | null> } | null = null;
+
+/**
+ * The Build Your Own Box on sale (price and rules set by the backend), or null when the backend
+ * has none active. Rejects if the request fails, so callers can tell "none" from "unknown".
+ */
+export function getBoxBundle(): Promise<BundleDTO | null> {
+  if (!boxCache || Date.now() - boxCache.at > TTL) {
+    const promise = bundleApi.active().then((list) => (Array.isArray(list) ? (list.find((b) => b.slug === BOX_SLUG && b.active !== false) ?? null) : null));
+    boxCache = { at: Date.now(), promise };
+    promise.catch(() => {
+      if (boxCache?.promise === promise) boxCache = null;
+    });
+  }
+  return boxCache.promise;
 }
 
 /** Active products, cached for a minute so every page and widget shares one request. */

@@ -186,9 +186,11 @@ function ProductForm({ product, others, onSaved }: { product?: ProductDTO; other
       else setValues(fromProduct(result));
     } catch (err) {
       setFormError(
-        err instanceof ApiError && err.status === 500
-          ? "The server rejected this product. Check that the slug isn't used by another product (including deleted drafts) and try again."
-          : errorMessage(err),
+        err instanceof ApiError && err.status === 409
+          ? "Another product already uses this slug. Choose a different one."
+          : err instanceof ApiError && err.status >= 500
+            ? "The server rejected this product. Check that the slug isn't used by another product and try again."
+            : errorMessage(err),
       );
     } finally {
       setSaving(false);
@@ -439,9 +441,11 @@ function DangerZone({ product }: { product: ProductDTO }) {
       navigate("/admin/products", { replace: true });
     } catch (e) {
       setError(
-        e instanceof ApiError && e.status >= 500
-          ? "This product is part of an order or a shopper's cart, so it can't be deleted. Turn off “Live in the store” to hide it instead."
-          : errorMessage(e),
+        e instanceof ApiError && e.status === 409
+          ? `${product.name} is in past orders, so deleting it would break their history and invoices. Turn off “Live in the store” to hide it instead.`
+          : e instanceof ApiError && e.status >= 500
+            ? "The product couldn't be deleted. If it is in past orders, turn off “Live in the store” to hide it instead."
+            : errorMessage(e),
       );
       setBusy(false);
       setConfirming(false);
@@ -450,7 +454,7 @@ function DangerZone({ product }: { product: ProductDTO }) {
 
   return (
     <Panel title="Delete">
-      <p className="text-[0.82rem] text-ink-muted">Deleting removes the product for good. To stop selling it but keep its history, hide it instead.</p>
+      <p className="text-[0.82rem] text-ink-muted">Deleting removes the product for good and takes it out of shoppers’ bags. A product that is in past orders can&rsquo;t be deleted; hide it instead.</p>
       {confirming ? (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button type="button" size="sm" onClick={remove} disabled={busy} className="bg-[#7d2e21] before:bg-[#5e2015]">

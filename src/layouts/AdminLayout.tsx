@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { isRouteErrorResponse, Navigate, NavLink, Outlet, useLocation, useNavigate, useRouteError } from "react-router";
-import { ArrowUpRight, LayoutDashboard, LogOut, Package, Receipt, ShieldAlert, TicketPercent, Users } from "lucide-react";
+import { ArrowUpRight, Gift, LayoutDashboard, LogOut, Package, Receipt, ShieldAlert, TicketPercent, Users } from "lucide-react";
 import Link from "@/components/ui/Link";
 import { Providers } from "@/components/layout/Providers";
 import { Toaster } from "@/components/layout/Toaster";
@@ -17,6 +17,7 @@ const NAV = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/admin/orders", label: "Orders", icon: Receipt },
   { to: "/admin/products", label: "Products", icon: Package },
+  { to: "/admin/bundles", label: "Boxes", icon: Gift },
   { to: "/admin/coupons", label: "Coupons", icon: TicketPercent },
   { to: "/admin/customers", label: "Customers", icon: Users },
 ];

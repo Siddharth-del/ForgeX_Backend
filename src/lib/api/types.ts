@@ -54,11 +54,67 @@ export interface ProductResponse {
 /** Body for POST /api/admin/products and PUT /api/admin/products/{id}. */
 export type ProductInput = Omit<ProductDTO, "productId" | "quantity" | "discount" | "image"> & { image?: string | null };
 
-/** dto/CartDTO.java — products carry `quantity`; totalPrice is paise. */
+/** dto/CartDTO.java — products carry `quantity`; totalPrice is paise (from current prices). */
 export interface CartDTO {
   cartId: number;
   totalPrice: number;
   products: ProductDTO[];
+  /** Build Your Own Box lines (missing on backends without box support). */
+  bundles?: CartBundleDTO[];
+}
+
+/** dto/BundleDTO.java — a box the customer fills (Build Your Own Box). Price in paise. */
+export interface BundleDTO {
+  bundleId: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  /** Products chosen for one box. */
+  itemCount: number;
+  /** One box, paise. */
+  price: number;
+  /** Only this category may be chosen; null = any. */
+  allowedCategory: CategoryEnum | null;
+  allowRepeats: boolean | null;
+  active: boolean | null;
+  image: string | null;
+}
+export type BundleInput = Omit<BundleDTO, "bundleId">;
+
+/** dto/BundleComponentDTO.java */
+export interface BundleComponentDTO {
+  productId: number;
+  name: string | null;
+  slug: string | null;
+  image: string | null;
+  category: CategoryEnum | null;
+  price: number | null;
+  active: boolean | null;
+  stock: number | null;
+  /** Units in one box. */
+  quantity: number;
+}
+
+/** dto/CartBundleDTO.java — a box line in the server cart. Money in paise. */
+export interface CartBundleDTO {
+  cartItemId: number;
+  bundleId: number;
+  slug: string;
+  name: string;
+  /** "B:{bundleId}:{id,id,id}" (ids ascending) */
+  lineKey: string;
+  productIds: number[];
+  components: BundleComponentDTO[];
+  quantity: number;
+  unitPrice: number;
+  value: number;
+  lineTotal: number;
+  available: boolean;
+  problem: string | null;
+  /** The box can't be bought as built (off sale, rules changed, a fragrance no longer sold). */
+  ruleProblem?: string | null;
+  /** Not enough stock for this many boxes right now. */
+  stockProblem?: string | null;
 }
 
 /** dto/AddressDTO.java (validation lives on model/Address.java). */
@@ -114,15 +170,31 @@ export interface PaymentVerifyRequest {
   razorpay_signature: string;
 }
 
+/** dto/OrderItemComponentDTO.java — a product inside a purchased box. */
+export interface OrderItemComponentDTO {
+  productId: number | null;
+  productName: string;
+  /** Units in one box. */
+  quantity: number;
+  unitPrice: number | null;
+}
+
 /** dto/OrderItemDTO.java */
 export interface OrderItemDTO {
   orderItemId: number;
+  /** Null for a box. */
   productId: number | null;
   productName: string;
   quantity: number;
   unitPrice: number;
   mrp: number | null;
   lineTotal: number;
+  /** Set for a Build Your Own Box line. */
+  bundleId?: number | null;
+  /** The cart line it came from ("P:{productId}" / "B:{bundleId}:{ids}"). */
+  lineKey?: string | null;
+  /** For a box: what's inside each box. */
+  components?: OrderItemComponentDTO[];
 }
 
 /** dto/OrderDTO.java */

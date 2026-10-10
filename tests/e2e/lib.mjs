@@ -8,6 +8,7 @@ import zlib from "node:zlib";
 export const APP = process.env.APP || "http://localhost:5173";
 export const API = process.env.API || "http://localhost:8080";
 export const RZP_SECRET = "double_razorpay_secret";
+export const RZP_WEBHOOK_SECRET = "double_webhook_secret";
 /** Screenshots land here (override with SHOTS=...). */
 export const SHOTS = process.env.SHOTS || path.join(os.tmpdir(), "cosmic-e2e-shots");
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -65,12 +66,28 @@ export async function signInPage(page, email, password) {
   return res;
 }
 
-export function bagLine(p, quantity = 1) {
-  return { key: `${p.id}:${p.id}`, productId: String(p.id), slug: p.slug, name: p.name, variantId: String(p.id), size: "", price: p.price, image: "", quantity, stock: p.stock };
+/**
+ * Make an account's server cart hold exactly `items` (the storefront has no bag on the device: the
+ * cart lives on the account). Items: { id, quantity } for a product, { box: [ids], quantity } for a box.
+ */
+export async function setServerCart(email, password, items) {
+  const { jwtToken } = await apiSignIn(email, password);
+  const H = { Authorization: `Bearer ${jwtToken}`, "Content-Type": "application/json" };
+  const cart = await (await fetch(`${API}/api/carts/users/cart`, { headers: H })).json();
+  for (const p of cart.products) await fetch(`${API}/api/carts/${cart.cartId}/product/${p.productId}`, { method: "DELETE", headers: H });
+  for (const b of cart.bundles ?? []) await fetch(`${API}/api/carts/bundle-items/${b.cartItemId}`, { method: "DELETE", headers: H });
+  for (const it of items) {
+    const r = it.box
+      ? await fetch(`${API}/api/carts/bundles/1`, { method: "POST", headers: H, body: JSON.stringify({ productIds: it.box, quantity: it.quantity ?? 1 }) })
+      : await fetch(`${API}/api/carts/products/${it.id}/quantity/${it.quantity ?? 1}`, { method: "POST", headers: H });
+    if (!r.ok) throw new Error(`setServerCart: ${r.status} ${await r.text()}`);
+  }
 }
 
-export async function setBag(page, lines) {
-  await page.evaluate((l) => localStorage.setItem("cosmic-cart-v2", JSON.stringify({ state: { lines: l }, version: 0 })), lines);
+/** The account's server cart lines as "key x quantity" (e.g. "P:1x2", "B:1:1,3,6x1"), sorted. */
+export async function serverCartLines(email) {
+  const cart = (await serverState()).carts.find(([e]) => e === email)?.[1];
+  return (cart?.items ?? []).map((i) => `${i.lineKey}x${i.quantity}`).sort();
 }
 
 /** Serves a stand-in for checkout.razorpay.com that behaves per window.__rzpMode, signing like Razorpay does. */

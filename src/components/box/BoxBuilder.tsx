@@ -1,40 +1,60 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useAuth } from "@/store/auth";
 import { useCart } from "@/store/cart";
 import { useUI } from "@/store/ui";
+import { useSignInToShop } from "@/hooks/useAddToCart";
 import { toast } from "@/store/toast";
 import { Button } from "@/components/ui/Button";
 import { CollectionSwitcher } from "@/components/collections/CollectionSwitcher";
 import { formatPrice } from "@/lib/format";
-import { site } from "@/lib/site";
 import { EASE } from "@/lib/motion";
 import { cn } from "@/lib/cn";
+import { rupees, type BundleDTO } from "@/lib/api/types";
 import type { Product, World } from "@/types";
 import { ProductPhoto } from "@/components/products/ProductPhoto";
 
 const miniVariant = (p: Product) => p.variants[0];
 
 interface Props {
+  /** The box on sale, from the backend (GET /api/public/bundles): its size, price and rules. */
+  box: BundleDTO;
   products: Product[];
   compact?: boolean;
   tone?: "light" | "dark";
 }
 
 /**
- * Pick any three fragrances (50 ml perfumes or 6 ml attars) for a fixed box price.
- * Adds a single bundle line to the cart.
+ * Pick the box's number of fragrances for its fixed price (both set by the backend).
+ * Adds the box to the shopper's server cart (POST /api/carts/bundles/{id}): the server keeps
+ * differently filled boxes as separate lines and charges its own box price.
  */
-export function BoxBuilder({ products, compact = false, tone = "dark" }: Props) {
+export function BoxBuilder({ box, products, compact = false, tone = "dark" }: Props) {
   const [selected, setSelected] = useState<Product[]>([]);
   const [world, setWorld] = useState<World | "all">("all");
-  const add = useCart((s) => s.add);
+  const addBox = useCart((s) => s.addBox);
+  const adding = useCart((s) => s.pending.includes("add-box"));
   const openCart = useUI((s) => s.openCart);
-  const size = site.box.size;
+  const signIn = useSignInToShop();
+  const size = box.itemCount;
+  const price = rupees(box.price);
   const full = selected.length === size;
   const light = tone === "light";
 
-  const list = useMemo(() => (world === "all" ? products : products.filter((p) => p.world === world)), [products, world]);
+  // Only products the box allows and that can actually be sent.
+  const eligible = useMemo(
+    () =>
+      products.filter(
+        (p) =>
+          miniVariant(p)?.inStock &&
+          Number.isSafeInteger(p.productId) &&
+          p.productId > 0 &&
+          (!box.allowedCategory || (box.allowedCategory === "ATTAR" ? p.type === "attar" : p.type === "perfume")),
+      ),
+    [products, box.allowedCategory],
+  );
+  const list = useMemo(() => (world === "all" ? eligible : eligible.filter((p) => p.world === world)), [eligible, world]);
   const value = selected.reduce((n, p) => n + miniVariant(p).price, 0);
 
   const toggle = (p: Product) => {
@@ -48,21 +68,18 @@ export function BoxBuilder({ products, compact = false, tone = "dark" }: Props) 
     });
   };
 
-  const addBox = () => {
-    const ids = selected.map((p) => p.id).sort().join("+");
-    add({
-      key: `box:${ids}`,
-      productId: "box",
-      slug: "build-your-box",
-      name: site.box.title,
-      variantId: `box:${ids}`,
-      size: `${size} fragrances`,
-      price: site.box.price,
-      compareAt: value > site.box.price ? value : undefined,
-      image: selected[0].images[0]?.src ?? "",
-      bundle: { title: site.box.title, items: selected.map((p) => ({ name: p.name, size: miniVariant(p).size })) },
-    });
-    toast({ title: "Your box is in the bag", description: selected.map((p) => p.name).join(" · "), image: selected[0].images[0]?.src ?? "", action: { label: "View bag", onClick: openCart } });
+  /** Adds the box to the server cart: the server checks the choice and stock and sets the price. */
+  const add = async () => {
+    if (!full || adding) return;
+    if (!useAuth.getState().token) return signIn();
+    const chosen = selected;
+    const ok = await addBox(
+      box.bundleId,
+      chosen.map((p) => p.productId),
+      1,
+    );
+    if (!ok) return; // the server's reason is shown; the selection stays so it can be changed
+    toast({ title: "Your box is in the bag", description: chosen.map((p) => p.name).join(" · "), image: chosen[0].images[0]?.src ?? "", action: { label: "View bag", onClick: openCart } });
     setSelected([]);
   };
 
@@ -104,9 +121,9 @@ export function BoxBuilder({ products, compact = false, tone = "dark" }: Props) 
           {full ? (
             <>
               Box complete.{" "}
-              {value > site.box.price && (
+              {value > price && (
                 <span className={light ? "text-gold-soft" : "text-gold-deep"}>
-                  You save {formatPrice(value - site.box.price)}
+                  You save {formatPrice(value - price)}
                 </span>
               )}
             </>
@@ -118,13 +135,18 @@ export function BoxBuilder({ products, compact = false, tone = "dark" }: Props) 
           )}
         </p>
         <div className="tabular flex items-baseline gap-2">
-          {value > 0 && <span className={cn("text-[0.8rem] line-through", light ? "text-ivory/40" : "text-ink-faint")}>{formatPrice(Math.max(value, site.box.price))}</span>}
-          <span className="text-lg font-medium">{formatPrice(site.box.price)}</span>
+          {value > price && <span className={cn("text-[0.8rem] line-through", light ? "text-ivory/40" : "text-ink-faint")}>{formatPrice(value)}</span>}
+          <span className="text-lg font-medium">{formatPrice(price)}</span>
         </div>
       </div>
-      <Button onClick={addBox} disabled={!full} variant={light ? "light" : "primary"} size="lg" arrow className="mt-4 w-full">
-        {full ? "Add box to cart" : `Select ${size - selected.length} more`}
+      <Button onClick={add} disabled={!full || adding} aria-busy={adding} variant={light ? "light" : "primary"} size="lg" arrow className="mt-4 w-full">
+        {adding ? "Adding your box" : full ? "Add box to cart" : `Select ${size - selected.length} more`}
       </Button>
+      {eligible.length < size && (
+        <p role="status" className={cn("mt-3 text-[0.8rem]", light ? "text-ivory/60" : "text-ink-muted")}>
+          Not enough fragrances are in stock to fill this box right now. Please check back soon.
+        </p>
+      )}
 
     </div>
   );
@@ -217,10 +239,10 @@ export function BoxBuilder({ products, compact = false, tone = "dark" }: Props) 
                 <p className="text-[0.75rem] text-ink-muted">
                   {selected.length} of {size} chosen
                 </p>
-                <p className="tabular mt-0.5 text-[0.95rem] font-medium">{formatPrice(site.box.price)}</p>
+                <p className="tabular mt-0.5 text-[0.95rem] font-medium">{formatPrice(price)}</p>
               </div>
-              <Button onClick={addBox} disabled={!full} size="md" className="px-5">
-                {full ? "Add box" : `${size - selected.length} more`}
+              <Button onClick={add} disabled={!full || adding} aria-busy={adding} size="md" className="px-5">
+                {adding ? "Adding" : full ? "Add box" : `${size - selected.length} more`}
               </Button>
             </div>
           </motion.div>

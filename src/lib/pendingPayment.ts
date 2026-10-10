@@ -13,13 +13,10 @@ export interface PendingPayment {
   amount: number;
   currency: string;
   email: string;
-  /** Bag contents when the order was created; a different bag means a new order. */
+  /** The cart (and address and coupon) the order was created for; a different cart means a new order. */
   bag: string;
   createdAt: number;
 }
-
-export const bagSignature = (lines: { productId: string; quantity: number }[]) =>
-  lines.map((l) => `${l.productId}x${l.quantity}`).sort().join(",");
 
 export function readPending(): PendingPayment | null {
   try {

@@ -281,7 +281,7 @@ function ForgotPassword({ email, setEmail, onCancel, onDone }: { email: string; 
     };
     if (next.password || next.confirm) return setErrors(next);
     void run(async () => {
-      const res = await authApi.resetPassword(email, password, confirm);
+      const res = await authApi.resetPassword(email, code, password, confirm);
       if (/not match/i.test(res)) throw new Error("The passwords don't match.");
       onDone();
     });

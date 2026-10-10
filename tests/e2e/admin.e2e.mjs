@@ -164,14 +164,33 @@ await page.getByText("Vetiver Rain is live").waitFor();
 await page.goto(APP + "/admin/products/1");
 await page.getByRole("button", { name: "Delete product" }).click();
 await page.getByRole("button", { name: "Delete Royal Oud" }).click();
-await page.getByText(/part of an order/).waitFor();
-check(true, "deleting a product that's in an order explains why it can't be deleted");
+await page.getByText(/is in past orders/).waitFor();
+check(true, "deleting a product that's in an order is refused (409) with an explanation");
+// A product that is only in a shopper's cart (never ordered) can be deleted: it leaves their cart.
+await fetch(`${API}/api/carts/products/${created.productId}/quantity/1`, { method: "POST", headers: H(user.jwtToken) });
 await page.goto(APP + `/admin/products/${created.productId}`);
 await page.getByRole("button", { name: "Delete product" }).click();
 await page.getByRole("button", { name: "Delete Saffron Dusk" }).click();
 await page.waitForURL(/\/admin\/products$/);
 st = await serverState();
 check(!st.products.some((p) => p.slug === "saffron-dusk"), "unused product deleted");
+const userCart = await (await fetch(`${API}/api/carts/users/cart`, { headers: H(user.jwtToken) })).json();
+check(!userCart.products.some((p) => p.productId === created.productId), "deleted product was taken out of the shopper's cart (no 500)");
+
+/* Build Your Own Box settings: the price saved here is what the store shows and checkout charges */
+await page.goto(APP + "/admin/bundles");
+await page.getByLabel("Box price (₹)").fill("1999");
+await page.getByRole("button", { name: "Save box" }).click();
+await page.getByText("Build Your Own Box saved").waitFor();
+st = await serverState();
+check(st.bundles[0].price === 199900, "box price saved on the server in paise (₹1,999)");
+await page.goto(APP + "/build-your-box");
+await page.getByRole("button", { name: /Select 3 more/ }).first().waitFor();
+check((await page.locator("aside[aria-label='Your box']").innerText()).includes("₹1,999"), "storefront box shows the new server price");
+await page.goto(APP + "/admin/bundles");
+await page.getByLabel("Box price (₹)").fill("1799");
+await page.getByRole("button", { name: "Save box" }).click();
+await page.getByText("Build Your Own Box saved").waitFor();
 
 /* orders: COD flow CONFIRMED → SHIPPED → DELIVERED, invoice */
 await page.goto(APP + `/admin/orders/${cod.orderId}`);

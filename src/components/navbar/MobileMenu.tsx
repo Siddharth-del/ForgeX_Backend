@@ -7,6 +7,7 @@ import { mainNav, footerNav, site } from "@/lib/site";
 import { EASE } from "@/lib/motion";
 import { useUI } from "@/store/ui";
 import { isAdmin, useAuth } from "@/store/auth";
+import { useBox } from "@/components/layout/CatalogProvider";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 
@@ -14,6 +15,7 @@ export function MobileMenu() {
   const open = useUI((s) => s.menuOpen);
   const setMenu = useUI((s) => s.setMenu);
   const user = useAuth((s) => s.user);
+  const box = useBox();
   const [world, setWorld] = useState<"attar" | "perfume">("perfume");
   const worldLinks = mainNav.find((n) => n.world === world)?.links ?? [];
 
@@ -48,7 +50,7 @@ export function MobileMenu() {
               </Link>
             </li>
           ))}
-          {site.features.buildYourBox && (
+          {box && (
           <li>
             <Link href="/build-your-box" onClick={() => setMenu(false)} className="block py-2.5 font-sans text-[0.8rem] font-medium uppercase tracking-[0.2em] text-gold-deep">
               Build your box

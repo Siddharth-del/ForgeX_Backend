@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
 
   // The browser only ever calls this site's own /api/... ; the dev/preview server forwards
   // those calls to the backend. Because the browser never talks to another origin, CORS
-  // never applies (the backend currently sends no CORS headers, so direct calls are blocked).
+  // never applies (calling the backend directly needs this origin in its CORS_ALLOWED_ORIGINS).
   const apiProxy: Record<string, ProxyOptions> = {
     "/api": {
       target: apiTarget,

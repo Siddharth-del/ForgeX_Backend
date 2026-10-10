@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "test": "vitest run",
     "test:double": "node tests/e2e/forgex-double.mjs",
     "test:e2e": "node tests/e2e/run.mjs"
   },
@@ -43,6 +44,7 @@
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.71.1",
-    "vite": "^7.3.7"
+    "vite": "^7.3.7",
+    "vitest": "^5.0.3"
   }
 }

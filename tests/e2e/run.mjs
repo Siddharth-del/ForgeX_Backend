@@ -13,7 +13,7 @@ for (const [name, url] of [["storefront", APP], ["API", `${API}/api/public/produ
   }
 }
 
-const suites = ["routes.e2e.mjs", "checkout.e2e.mjs", "admin.e2e.mjs", "account.e2e.mjs"];
+const suites = ["routes.e2e.mjs", "checkout.e2e.mjs", "box.e2e.mjs", "admin.e2e.mjs", "account.e2e.mjs"];
 const results = [];
 for (const s of suites) {
   console.log(`\n=== ${s} ===`);

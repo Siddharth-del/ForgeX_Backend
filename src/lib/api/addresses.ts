@@ -2,17 +2,18 @@
 import { api, ApiError } from "@/lib/api/client";
 import { errorMessage } from "@/lib/errors";
 import type { AddressDTO, AddressInput } from "@/lib/api/types";
+import { requireId } from "@/lib/ids";
 
 export const addressApi = {
   mine: () => api<AddressDTO[]>("/api/users/addresses"),
-  get: (id: number) => api<AddressDTO>(`/api/addresses/${id}`),
+  get: async (id: number) => api<AddressDTO>(`/api/addresses/${requireId(id, "address")}`),
   create: (a: AddressInput) => api<AddressDTO>("/api/addresses", { method: "POST", body: a }),
-  remove: (id: number) => api<string>(`/api/addresses/${id}`, { method: "DELETE" }),
+  remove: async (id: number) => api<string>(`/api/addresses/${requireId(id, "address")}`, { method: "DELETE" }),
 };
 
 /**
- * The backend validates addresses only on the database entity, and a failure there comes back
- * as a generic error, so mirror its exact rules here first.
+ * The backend validates addresses on the database entity (a failure comes back as 400 with the
+ * field rule), so mirror its exact rules here first and the shopper sees them next to each field.
  */
 export function validateAddress(a: AddressInput): Partial<Record<keyof AddressInput, string>> {
   const e: Partial<Record<keyof AddressInput, string>> = {};
@@ -32,6 +33,11 @@ export function validateAddress(a: AddressInput): Partial<Record<keyof AddressIn
   return e;
 }
 
-/** Explains a failed delete: the backend answers with a generic error when an order still uses the address. */
+/**
+ * Explains a failed delete. An address an order still uses can't be deleted: the backend answers 409
+ * (older backends answered with a server error).
+ */
 export const removeAddressError = (e: unknown) =>
-  e instanceof ApiError && e.status >= 500 ? "This address is linked to an order, so it's kept for that delivery and can't be removed." : errorMessage(e);
+  e instanceof ApiError && (e.status === 409 || e.status >= 500)
+    ? "This address is linked to an order, so it's kept for that delivery and can't be removed."
+    : errorMessage(e);

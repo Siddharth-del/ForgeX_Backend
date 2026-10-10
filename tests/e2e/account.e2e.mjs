@@ -42,6 +42,32 @@ for (const [w, h, tag] of [[1440, 900, "d"], [390, 844, "m"]]) {
   }
   await ctx.close();
 }
+// Password reset: the API refuses a reset without the verified code; the site sends the code with the new password.
+{
+  const bare = await fetch(`${API}/api/auth/reset-password?email=user1@example.com`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: "hijack1", confirmPassword: "hijack1" }) });
+  check(bare.status === 400, `reset without a verified code is refused (${bare.status})`);
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await ctx.newPage();
+  collectConsole(page, errors);
+  await page.goto(APP + "/account");
+  await page.getByRole("button", { name: "Forgot password?" }).click();
+  await page.locator("form[aria-label='Send reset code']").getByLabel("Email").fill("user1@example.com");
+  await page.getByRole("button", { name: "Send code" }).click();
+  await page.getByLabel("Six-digit code").waitFor();
+  const { code } = await (await fetch(`${API}/__otp?email=user1@example.com`)).json();
+  await page.getByLabel("Six-digit code").fill(code);
+  await page.getByRole("button", { name: "Verify code" }).click();
+  // Someone who knows only the email tries to get in between the two steps.
+  const between = await fetch(`${API}/api/auth/reset-password?email=user1@example.com`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: "hijack1", confirmPassword: "hijack1" }) });
+  check(between.status === 400, `reset with only the email, after the owner verified, is refused (${between.status})`);
+  await page.getByLabel("New password", { exact: true }).fill("password1");
+  await page.getByLabel("Confirm new password").fill("password1");
+  await page.getByRole("button", { name: "Set new password" }).click();
+  await page.getByText("Password updated. Sign in with your new password.").waitFor();
+  check(true, "owner resets the password with the emailed code");
+  await ctx.close();
+}
+
 const relevant = errors.filter((e) => !/Failed to load resource/.test(e));
 check(relevant.length === 0, `no console errors ${relevant.join(" | ")}`);
 await b.close();

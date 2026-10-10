@@ -7,7 +7,7 @@
  *   POST /api/auth/signout                                          -> { message }
  *   POST /api/auth/forgot/password?email=                           -> text
  *   POST /api/auth/verify-otp?email=&otp=                           -> text ("OTP Validate" | 400 "Invalid OTP")
- *   POST /api/auth/reset-password?email=  { password, confirmPassword } -> text
+ *   POST /api/auth/reset-password?email=&otp=  { password, confirmPassword } -> text (400 without a verified code)
  */
 import { api } from "@/lib/api/client";
 
@@ -41,7 +41,8 @@ export const authApi = {
   verifyOtp: (email: string, otp: string) =>
     api<string>("/api/auth/verify-otp", { method: "POST", auth: false, query: { email: normaliseEmail(email), otp: otp.trim() } }),
 
-  resetPassword: (email: string, password: string, confirmPassword: string) =>
-    api<string>("/api/auth/reset-password", { method: "POST", auth: false, query: { email: normaliseEmail(email) }, body: { password, confirmPassword } }),
+  /** `otp`: the code verified in the previous step; the backend requires it again before changing the password. */
+  resetPassword: (email: string, otp: string, password: string, confirmPassword: string) =>
+    api<string>("/api/auth/reset-password", { method: "POST", auth: false, query: { email: normaliseEmail(email), otp: otp.trim() }, body: { password, confirmPassword } }),
 };
 

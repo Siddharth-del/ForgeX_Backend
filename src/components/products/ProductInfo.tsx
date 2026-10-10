@@ -47,9 +47,13 @@ export function ProductInfo({ product, tone = "dark" }: { product: Product; tone
     };
   }, []);
 
-  const buyNow = () => {
-    add(product, variant, qty, { silent: true });
-    navigate("/checkout");
+  const [buying, setBuying] = useState(false);
+  const buyNow = async () => {
+    if (buying) return;
+    setBuying(true);
+    const ok = await add(product, variant, qty, { silent: true });
+    setBuying(false);
+    if (ok) navigate("/checkout");
   };
 
   const kind = product.type === "attar" ? "Attar" : "Perfume";
@@ -109,8 +113,8 @@ export function ProductInfo({ product, tone = "dark" }: { product: Product; tone
           <AddToCartButton product={product} variant={variant} quantity={qty} style={light ? "light" : "primary"} size="lg" className="flex-1" />
           <WishlistButton product={product} variant="inline" className={cn("h-14 w-14", light && "border-ivory/30 text-ivory hover:border-ivory")} />
         </div>
-        <Button variant={light ? "outline-light" : "outline"} size="lg" disabled={!variant.inStock} onClick={buyNow} className="w-full">
-          Buy now
+        <Button variant={light ? "outline-light" : "outline"} size="lg" disabled={!variant.inStock || buying} aria-busy={buying} onClick={buyNow} className="w-full">
+          {buying ? "Adding to your bag" : "Buy now"}
         </Button>
       </div>
 

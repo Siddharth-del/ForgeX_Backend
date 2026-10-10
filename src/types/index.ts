@@ -132,21 +132,3 @@ export interface Testimonial {
   verified: boolean;
   productSlug?: string;
 }
-
-export interface CartLine {
-  /** product id + variant id, or a box id */
-  key: string;
-  productId: string;
-  slug: string;
-  name: string;
-  variantId: string;
-  size: string;
-  price: number;
-  compareAt?: number;
-  image: string;
-  quantity: number;
-  /** Units in stock when last seen; caps the quantity (the backend also allows at most 10). */
-  stock?: number;
-  /** Present for Build Your Own Box lines. */
-  bundle?: { title: string; items: { name: string; size: string }[] };
-}

@@ -3,12 +3,16 @@
  *
  * Base URL: VITE_API_BASE_URL. Leave it empty (the default) so the browser calls this site's own
  * /api/..., which is forwarded to the backend: by Vite locally (VITE_API_PROXY_TARGET, see
- * vite.config.ts) and by the "/api/*" rewrite on Render. Same-origin calls avoid CORS, which the
- * backend doesn't currently apply. Only set it to the backend URL once the backend sends CORS headers.
+ * vite.config.ts) and by the "/api/*" rewrite on Render. Same-origin calls need no CORS at all. To call
+ * the backend directly instead, set it to the backend URL and add this site's origin to the backend's
+ * CORS_ALLOWED_ORIGINS (credentials are allowed only for listed origins).
  *
- * Auth: "Authorization: Bearer <jwt>" from the signed-in session; cookies are not used.
+ * Auth: "Authorization: Bearer <jwt>" from the signed-in session. Requests also include credentials,
+ * so the backend's JWT cookie (set at sign-in, path /api) keeps working; the backend prefers the
+ * Authorization header when both are present.
  */
 import { useAuth } from "@/store/auth";
+import { InvalidIdError } from "@/lib/ids";
 
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
 
@@ -66,7 +70,7 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
       method,
       headers,
       body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
-      credentials: "omit",
+      credentials: "include",
       signal: controller.signal,
     });
   } catch {
@@ -104,16 +108,16 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
 }
 
 /**
- * The backend answers 401 both for a bad token AND for any unhandled server error on a signed-in
- * request (Spring forwards errors to /error, which isn't permitted). Tell them apart before
- * signing the customer out.
+ * A 401 on a signed-in request. The current backend sends 401 only for a missing, invalid or expired
+ * token (unhandled errors are 500s since /error is permitted), but older deployments also answered
+ * 401 for any server error. Check the session before signing the customer out, so either works.
  */
 async function sessionError(token: string, payload: unknown): Promise<ApiError> {
   const { expiresAt, clearSession } = useAuth.getState();
   let valid = !(expiresAt && expiresAt <= Date.now());
   if (valid) {
     try {
-      const r = await fetch(apiUrl("/api/auth/user"), { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, credentials: "omit" });
+      const r = await fetch(apiUrl("/api/auth/user"), { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, credentials: "include" });
       valid = r.ok;
     } catch {
       valid = true; // can't tell; keep the session
@@ -134,6 +138,7 @@ const GENERIC: Record<number, string> = {
   401: "Please sign in to continue.",
   403: "You don't have permission to do that.",
   404: "We couldn't find that.",
+  409: "That conflicts with a recent change. Please refresh and try again.",
   413: "That file is too large.",
   500: "Something went wrong on our side. Please try again in a moment.",
   502: "The server isn't responding right now. Please try again in a minute.",
@@ -159,6 +164,21 @@ function toApiError(payload: unknown, status: number): ApiError {
     }
   }
   return new ApiError(GENERIC[status] ?? (status >= 500 ? GENERIC[500] : "Something went wrong. Please try again."), status);
+}
+
+export type ErrorKind = "session" | "forbidden" | "not-found" | "invalid" | "conflict" | "server" | "network";
+
+/** What kind of failure an error is, so the UI can react differently (sign in again, fix the input, retry later). */
+export function errorKind(e: unknown): ErrorKind {
+  if (e instanceof InvalidIdError) return "invalid"; // stopped before any request was made
+  if (!(e instanceof ApiError)) return "server";
+  if (e.status === 0) return "network";
+  if (e.status === 401) return "session";
+  if (e.status === 403) return "forbidden";
+  if (e.status === 404) return "not-found";
+  if (e.status === 409) return "conflict";
+  if (e.status >= 400 && e.status < 500) return "invalid";
+  return "server";
 }
 
 /** Save a Blob as a file (invoice downloads). */

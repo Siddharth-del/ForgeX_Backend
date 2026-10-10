@@ -15,7 +15,7 @@ export default tseslint.config(
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
       // Route modules export a loader next to the page component.
-      "react-refresh/only-export-components": ["warn", { allowExportNames: ["loader", "useCatalog", "buttonClass", "socialLinks"] }],
+      "react-refresh/only-export-components": ["warn", { allowExportNames: ["loader", "useCatalog", "useBox", "buttonClass", "socialLinks"] }],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
   },

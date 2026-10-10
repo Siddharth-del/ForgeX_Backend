@@ -1,10 +1,10 @@
 // Checkout + payment tests against the ForgeX test double (see tests/e2e/README.md)
 import { chromium } from "playwright";
-import { APP, SHOTS, bagLine, check, collectConsole, failed, fakeRazorpay, reset, serverState, setBag, signInPage } from "./lib.mjs";
+// The cart lives on the account (ForgeX model): tests put items in the server cart, or add them in the UI.
+import { APP, SHOTS, check, collectConsole, failed, fakeRazorpay, reset, serverCartLines, serverState, setServerCart, signInPage } from "./lib.mjs";
 
-const ROYAL = { id: 1, slug: "royal-oud", name: "Royal Oud", price: 1999, stock: 12 };
-const AMBER = { id: 3, slug: "amber-nuit", name: "Amber Nuit", price: 2499, stock: 20 };
-const ROSE = { id: 2, slug: "rose-attar", name: "Rose Attar", price: 1299, stock: 3 };
+const USER = ["user1@example.com", "password1"];
+const ROYAL = { id: 1 }, AMBER = { id: 3 }, ROSE = { id: 2 };
 const SHOT = `${SHOTS}/checkout`;
 
 await reset();
@@ -22,24 +22,46 @@ async function fresh({ signedIn = true, w = 1366, h = 900 } = {}) {
 const ordersOf = async (email = "user1@example.com") => (await serverState()).orders.filter((o) => o.email === email);
 const button = (page) => page.locator("main button", { hasText: /Pay securely|Resume payment|Place order|Placing order|Waiting for payment|Confirming payment/ });
 
-/* 1. anonymous */
+/* 1. signed out: no cart until sign-in; "Add to cart" sends to sign-in and back */
 {
   const { ctx, page } = await fresh({ signedIn: false });
-  await page.goto(APP + "/");
-  await setBag(page, [bagLine(ROYAL, 1)]);
   await page.goto(APP + "/checkout");
   await page.getByText("Sign in to continue").waitFor();
-  check(await page.locator("main").getByRole("link", { name: "Sign in" }).getAttribute("href").then((h) => h?.includes("next=/checkout")), "anonymous checkout asks to sign in (next=/checkout)");
-  check((await page.locator("aside").innerText()).includes("Estimated total"), "anonymous summary shows an estimate only");
-  await page.screenshot({ path: `${SHOT}-anon.png`, fullPage: true });
+  check(await page.locator("main").getByRole("link", { name: "Sign in" }).getAttribute("href").then((h) => h?.includes("next=/checkout")), "signed-out checkout asks to sign in (next=/checkout)");
+
+  const cartsBefore = (await serverState()).carts.length;
+  await page.goto(APP + "/products/royal-oud");
+  await page.locator("main").getByRole("button", { name: "Add to cart" }).first().click();
+  await page.waitForURL(/\/account\?next=/);
+  check(decodeURIComponent(page.url()).includes("next=/products/royal-oud"), "signed-out Add to cart → sign in, coming back to the product");
+  check((await serverState()).carts.length === cartsBefore, "nothing was sent to the server while signed out");
+  await page.locator("form[aria-label='Sign in']").getByLabel("Email").fill("user1@example.com");
+  await page.locator("form[aria-label='Sign in']").getByLabel("Password", { exact: true }).fill("password1");
+  await page.locator("form[aria-label='Sign in'] button[type=submit]").click();
+  await page.waitForURL(/\/products\/royal-oud$/);
+  await page.locator("main").getByRole("button", { name: "Add to cart" }).first().click();
+  await page.locator("main").getByRole("button", { name: /Added/ }).first().waitFor();
+  check(JSON.stringify(await serverCartLines("user1@example.com")) === JSON.stringify(["P:1x1"]), "after sign-in, Add to cart puts it in the account's server cart");
+
+  // The bag drawer shows the server cart; its buttons change the server cart.
+  await page.getByRole("button", { name: /Open bag, 1 item/ }).first().click();
+  const drawer = page.getByRole("dialog", { name: "Shopping bag" });
+  await drawer.getByText("Royal Oud").first().waitFor();
+  await drawer.getByRole("button", { name: "Increase quantity" }).click();
+  await drawer.getByRole("button", { name: "Decrease quantity" }).waitFor();
+  await page.waitForFunction(() => document.querySelector("[aria-label='Quantity of Royal Oud'] [aria-live]")?.textContent?.trim() === "2");
+  check(JSON.stringify(await serverCartLines("user1@example.com")) === JSON.stringify(["P:1x2"]), "+ in the bag raises the server quantity");
+  await drawer.getByRole("button", { name: "Remove Royal Oud" }).click();
+  await drawer.getByText("Your bag is empty").waitFor();
+  check((await serverCartLines("user1@example.com")).length === 0, "Remove takes it out of the server cart");
+  await page.screenshot({ path: `${SHOT}-signin-add.png`, fullPage: false });
   await ctx.close();
 }
 
 /* 2. signed in: address form, coupon, dismiss, resume, success */
 {
+  await setServerCart(...USER, [{ id: ROYAL.id, quantity: 1 }]);
   const { ctx, page } = await fresh();
-  await page.goto(APP + "/");
-  await setBag(page, [bagLine(ROYAL, 1)]);
   await page.goto(APP + "/checkout");
   await page.getByText("Where should we deliver?").waitFor();
   check(true, "no saved address → new-address form opens");
@@ -102,8 +124,8 @@ const button = (page) => page.locator("main button", { hasText: /Pay securely|Re
   await page.getByText("Payment received").waitFor();
   orders = await ordersOf();
   check(orders.length === 1 && orders[0].status === "PAID" && orders[0].payment.status === "CAPTURED", "success: server verified → PAID/CAPTURED");
-  const bag = await page.evaluate(() => JSON.parse(localStorage.getItem("cosmic-cart-v2")).state.lines.length);
-  check(bag === 0, "bag cleared after verified payment");
+  check((await serverCartLines("user1@example.com")).length === 0, "server removed the ordered line from the cart after verified payment");
+  check(await page.getByRole("button", { name: /Open bag, 0 items/ }).first().isVisible(), "navbar bag shows 0");
   check(!(await page.evaluate(() => sessionStorage.getItem("cosmic-pending-payment"))), "pending payment forgotten");
   await page.screenshot({ path: `${SHOT}-paid.png`, fullPage: true });
 
@@ -115,9 +137,8 @@ const button = (page) => page.locator("main button", { hasText: /Pay securely|Re
 
 /* 3. bad signature → never shown as paid */
 {
+  await setServerCart(...USER, [{ id: AMBER.id, quantity: 1 }]);
   const { ctx, page } = await fresh();
-  await page.goto(APP + "/");
-  await setBag(page, [bagLine(AMBER, 1)]);
   await page.goto(APP + "/checkout");
   await page.getByRole("radio", { checked: true }).first().waitFor();
   await page.locator("aside").getByText("Total").last().waitFor();
@@ -128,8 +149,7 @@ const button = (page) => page.locator("main button", { hasText: /Pay securely|Re
   const last = orders.at(-1);
   check(last.status === "PENDING_PAYMENT", "forged signature: order stays PENDING_PAYMENT");
   check(page.url().endsWith("/checkout"), "forged signature: no confirmation page");
-  const bag = await page.evaluate(() => JSON.parse(localStorage.getItem("cosmic-cart-v2")).state.lines.length);
-  check(bag === 1, "forged signature: bag kept");
+  check(JSON.stringify(await serverCartLines("user1@example.com")) === JSON.stringify(["P:3x1"]), "forged signature: cart kept");
   await page.screenshot({ path: `${SHOT}-badsig.png`, fullPage: true });
 
   // order page for the pending order offers to complete payment, then succeeds
@@ -145,9 +165,8 @@ const button = (page) => page.locator("main button", { hasText: /Pay securely|Re
 
 /* 4. duplicate clicks + COD */
 {
+  await setServerCart(...USER, [{ id: AMBER.id, quantity: 2 }]);
   const { ctx, page } = await fresh();
-  await page.goto(APP + "/");
-  await setBag(page, [bagLine(AMBER, 2)]);
   await page.goto(APP + "/checkout");
   await page.getByRole("radio", { checked: true }).first().waitFor();
   await page.locator("aside").getByText("Total").last().waitFor();
@@ -171,9 +190,8 @@ const button = (page) => page.locator("main button", { hasText: /Pay securely|Re
 
 /* 5. stock bought by someone else while this shopper is on checkout → issue + fix */
 {
+  await setServerCart(...USER, [{ id: ROSE.id, quantity: 3 }]);
   const { ctx, page } = await fresh();
-  await page.goto(APP + "/");
-  await setBag(page, [bagLine(ROSE, 3)]);
   await page.goto(APP + "/checkout");
   await page.getByRole("radio", { checked: true }).first().waitFor();
   await page.locator("aside").getByText("Total").last().waitFor();
@@ -190,23 +208,17 @@ const button = (page) => page.locator("main button", { hasText: /Pay securely|Re
   await page.getByText(/Some items need your attention|Only \d+ left/).first().waitFor();
   check((await ordersOf()).length === before, "no order created when stock ran out mid-checkout");
   await page.screenshot({ path: `${SHOT}-stock.png`, fullPage: true });
-  if (await page.getByRole("button", { name: "Use available quantities" }).isVisible()) {
-    await page.getByRole("button", { name: "Use available quantities" }).click();
-    await page.getByText("Some items need your attention").waitFor({ state: "detached" });
-  } else {
-    await page.reload();
-    await page.locator("aside").getByText("Total").last().waitFor();
-  }
-  const q = await page.evaluate(() => JSON.parse(localStorage.getItem("cosmic-cart-v2")).state.lines[0]?.quantity);
-  check(q === 1, `bag reduced to what's available (${q})`);
+  await page.getByRole("button", { name: "Use available quantities" }).click();
+  await page.getByText("Some items need your attention").waitFor({ state: "detached" });
+  const lines = await serverCartLines("user1@example.com");
+  check(JSON.stringify(lines) === JSON.stringify(["P:2x1"]), `server cart lowered to what's available (${lines.join(", ")})`);
   await ctx.close();
 }
 
 /* 6. mobile layout */
 {
+  await setServerCart(...USER, [{ id: ROYAL.id, quantity: 1 }]);
   const { ctx, page } = await fresh({ w: 390, h: 844 });
-  await page.goto(APP + "/");
-  await setBag(page, [bagLine(ROYAL, 1)]);
   await page.goto(APP + "/checkout");
   await page.locator("aside").getByText("Total").last().waitFor();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

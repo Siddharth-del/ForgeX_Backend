@@ -24,12 +24,7 @@ export const site = {
     "Complimentary shipping on orders above ₹1,499",
     "Secure online payment with Razorpay, or cash on delivery",
   ],
-  box: { size: 3, price: 1799, title: "Build Your Own Box" },
-  /**
-   * Features the backend can't support yet stay switched off, so shoppers never see a price
-   * that checkout won't honour. Build Your Own Box needs bundle pricing on the server.
-   */
-  features: { buildYourBox: false },
+  // Build Your Own Box (size, price, rules) is defined on the backend: GET /api/public/bundles.
 } as const;
 
 export type NavLink = { label: string; href: string; description?: string };

@@ -2,8 +2,8 @@
 
 The Cosmic Life storefront and the ForgeX admin panel, built on **React 19 + Vite 7 + React Router 7 + TypeScript +
 Tailwind CSS 3 + Framer Motion + Zustand**. Everything runs against the **ForgeX Spring Boot API**
-(`forgexperfumes-code/forgex_website`): products, accounts, addresses, cart, checkout, Razorpay and cash-on-delivery
-payments, orders, invoices, and the admin tools for products, orders and coupons.
+(`forgexperfumes-code/forgex_website`): products, accounts, addresses, cart, Build Your Own Box, checkout, Razorpay and
+cash-on-delivery payments, orders, invoices, and the admin tools for products, boxes, orders and coupons.
 
 | | URL |
 | --- | --- |
@@ -15,15 +15,17 @@ payments, orders, invoices, and the admin tools for products, orders and coupons
 
 **How the storefront talks to the API:** the browser only ever calls the storefront's own `/api/...` address, and the
 server in front of it forwards those calls to the backend (Vite's dev/preview server locally, a rewrite rule on Render).
-The browser never makes a cross-site request, which matters because the backend currently sends no CORS headers.
+The browser never makes a cross-site request, so CORS isn't involved. (The backend does apply CORS now, for the origins in
+its `CORS_ALLOWED_ORIGINS`: add the storefront's URL there, see "Deploy on Render".)
 
-Requires **Node 20.19+ or 22.12+**. Full endpoint map, admin features, test results and backend to-dos:
-**[docs/INTEGRATION.md](docs/INTEGRATION.md)**.
+Requires **Node 20.19+ or 22.12+**. Full endpoint map, checkout flow, admin features and test results:
+**[docs/INTEGRATION.md](docs/INTEGRATION.md)**. Backend changes, environment variables and the database migration:
+`Forgex/docs/CART-CHECKOUT-AND-BOXES.md` in the backend repo.
 
 ## Run it locally
 
-1. Start the ForgeX backend on port 8080 (from the backend repo's `Forgex` folder, with its database, Razorpay **test**
-   keys, Cloudinary and mail variables set):
+1. Start the ForgeX backend on port 8080 (from the backend repo's `Forgex` folder, with its environment variables set:
+   database, `JWT_SECRET`, Razorpay **test** keys, Cloudinary and mail — see its `docs/CART-CHECKOUT-AND-BOXES.md`):
 
    ```bash
    ./mvnw spring-boot:run        # Windows: mvnw.cmd spring-boot:run
@@ -44,7 +46,7 @@ Requires **Node 20.19+ or 22.12+**. Full endpoint map, admin features, test resu
 | Variable | Used by | Default | Purpose |
 | --- | --- | --- | --- |
 | `VITE_API_PROXY_TARGET` | `npm run dev`, `npm run preview` | `http://localhost:8080` (`.env.development`) | Where `/api` is forwarded |
-| `VITE_API_BASE_URL` | the browser | empty | Empty = call this site's own `/api` (recommended). Set to the backend URL only once it sends CORS headers |
+| `VITE_API_BASE_URL` | the browser | empty | Empty = call this site's own `/api` (recommended). To call the backend directly instead, set its URL here and add this site's origin to the backend's `CORS_ALLOWED_ORIGINS` |
 | `VITE_NEWSLETTER_URL` | the browser | empty | Optional public form endpoint of your email provider for the newsletter |
 
 `.env.example` lists them. **Never put secrets in `VITE_` variables**: they end up in the browser. The Razorpay key id
@@ -55,9 +57,12 @@ database credentials stay on the backend. Use `.env.local` (git-ignored) for mac
 
 ### 1. The backend (if it isn't on Render yet)
 Create a **Web Service** from the backend repo with **Docker** as the runtime (root directory `Forgex`; the repo has a
-Dockerfile). Add its environment variables (`DATABASE_URL`, `DB_USERNAME`, `DB_PASSWORD`, `MAIL_*`, `RAZORPAY_*`,
-`CLOUDINARY_*`). In the Razorpay Dashboard, point a webhook at `https://<your-backend>.onrender.com/api/public/webhooks/razorpay`
-for `payment.captured` and `payment.failed` (it marks orders paid even if the customer closes the tab right after paying).
+Dockerfile). Add its environment variables (`DATABASE_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`,
+`CORS_ALLOWED_ORIGINS` including `https://<your-frontend>.onrender.com`, `MAIL_*`, `RAZORPAY_KEY_ID`,
+`RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `CLOUDINARY_*`). Before the first deploy of this version, run
+`db/migrations/V2__cart_integrity_and_bundles.sql` once against the database. In the Razorpay Dashboard, point a webhook
+at `https://<your-backend>.onrender.com/api/public/webhooks/razorpay` for `payment.captured` and `payment.failed` (it marks
+orders paid even if the customer closes the tab right after paying).
 
 ### 2. The storefront (this folder)
 In `render.yaml`, replace `YOUR-BACKEND` in the `/api/*` rewrite with the backend URL. Push this folder to GitHub, then in
@@ -81,19 +86,30 @@ If the `/api` rule is missing, pages say *"The store isn't connected to its serv
 | --- | --- | --- |
 | Products, collections, search, filters, product pages | `src/lib/catalog.ts` | `GET /api/public/products` (all pages; only active products are shown) |
 | Sign in, sign up, password reset, session | `src/components/layout/AccountView.tsx`, `src/store/auth.ts` | `/api/auth/*` |
-| Bag → server cart | `src/lib/serverCart.ts` | `/api/carts/...`, `/api/cart/...` |
+| Bag (the account's server cart: products and boxes) | `src/store/cart.ts`, `src/lib/cart.ts`, `src/lib/api/cart.ts`, `src/components/cart/CartDrawer.tsx` | `/api/carts/...`, `/api/cart/...` |
+| Build Your Own Box | `src/components/box/BoxBuilder.tsx`, `/build-your-box` | `GET /api/public/bundles`, `POST /api/carts/bundles/{id}` |
 | Addresses | `src/components/account/Addresses.tsx` | `/api/addresses`, `/api/users/addresses` |
 | Checkout, coupons, Razorpay, COD | `src/components/cart/CheckoutView.tsx`, `src/lib/payOrder.ts` | `/api/checkout/preview`, `/api/checkout`, `/api/payments/verify` |
 | Orders, invoices | `src/components/orders/*`, `/account`, `/account/orders/:id` | `/api/orders`, `/api/orders/{id}/invoice` |
 | Admin panel | `src/layouts/AdminLayout.tsx`, `src/pages/admin/*` | `/api/admin/*` |
+
+**The bag is the account's server cart** (the ForgeX frontend's cart model). Shoppers sign in to add to it; "Add to
+cart" while signed out goes to sign-in and back. Every change (add, +/−, remove, add a box) is a request, and the bag,
+navbar count and checkout show the cart the server sends back, so they always match what an order will contain.
+Nothing about the bag is stored on the device, and it follows the account across devices.
 
 **Payments are confirmed by the server only.** The Razorpay window's success callback is sent to
 `POST /api/payments/verify`, where the backend checks the signature with its secret; the shopper sees "Payment received"
 only when the backend says the order is `PAID`. Closing the window keeps the order reserved (15 minutes on the backend)
 and offers to resume the same order rather than creating another.
 
-All requests go through one client, `src/lib/api/client.ts`: base URL, Bearer token, timeouts, readable errors, and
-session-expiry handling.
+All requests go through one client, `src/lib/api/client.ts`: base URL, Bearer token, cookies (`credentials: "include"`),
+timeouts, readable errors that tell 400/401/403/404/409/5xx apart, and session-expiry handling. Ids are checked before a
+URL is built (`src/lib/ids.ts`), so a bad id never becomes a request like `/products/NaN`.
+
+**Build Your Own Box** is priced and validated by the backend: the box's size, price and rules come from
+`GET /api/public/bundles`, a box goes into the server cart as the box id plus the chosen product ids, and checkout charges
+the server's box price. Differently filled boxes are separate lines; the order lists what was in each box.
 
 ## Admin panel
 
@@ -110,11 +126,12 @@ carries the token, and 401/403 responses are shown as such.
   message when a product can't be deleted.
 - **Orders**: filter by status or payment method, search, detail with address and items, only the status moves the
   backend allows (Paid → Confirmed/Cancelled, Confirmed → Shipped/Cancelled, Shipped → Delivered), invoice PDF.
+- **Boxes**: Build Your Own Box settings — products per box, price, allowed category, repeats, on sale.
 - **Coupons**: create, edit, switch on/off; percent (1–90, optional cap) or fixed amount, minimum order, usage limit, dates.
 - **Customers**: everyone who has ordered, from order history (the API has no user-management endpoint).
 
 Not available because the API doesn't support it: refunds (use the Razorpay Dashboard), customer account management,
-shipment tracking numbers, reviews, fragrance notes, gift sets and box bundles. Details in `docs/INTEGRATION.md`.
+shipment tracking numbers, reviews, fragrance notes and gift sets. Details in `docs/INTEGRATION.md`.
 
 ## Scripts
 
@@ -124,6 +141,7 @@ npm run build        # type-check, then production build into dist/
 npm run preview      # serve dist/ at http://localhost:4173
 npm run typecheck
 npm run lint
+npm test             # unit tests (Vitest)
 npm run test:double  # ForgeX test double on :8080 (for the browser tests)
 npm run test:e2e     # browser tests, see tests/e2e/README.md
 ```
@@ -135,15 +153,16 @@ index.html              page shell (title, meta, favicon)
 vite.config.ts          React plugin, @/ alias, /api proxy, dev server on localhost:5173
 render.yaml             Render static-site Blueprint (/api rewrite + SPA fallback)
 docs/INTEGRATION.md     endpoints, admin features, removed assets, backend to-dos, test results
+vitest.config.ts        unit tests (src/**/*.test.ts)
 tests/e2e/              Playwright suites + a test double of the ForgeX API
 src/
   router.tsx            all routes; storefront under RootLayout, admin under AdminLayout
   layouts/              RootLayout (storefront shell), AdminLayout (admin shell + access check)
   pages/                one file per route; pages/admin/ for the admin panel
   components/           storefront sections; account/ (addresses), orders/, admin/ (admin UI kit)
-  lib/                  api/ (one module per backend area), catalog.ts, payOrder.ts, razorpay.ts,
-                        serverCart.ts, pendingPayment.ts, orders.ts, admin.ts, image.ts, site.ts
-  store/                cart, wishlist, ui, toast, auth (Zustand; persisted in localStorage)
+  lib/                  api/ (one module per backend area), ids.ts, catalog.ts, payOrder.ts, razorpay.ts,
+                        cart.ts, pendingPayment.ts, orders.ts, admin.ts, image.ts, site.ts
+  store/                cart (server cart), wishlist, ui, toast, auth (Zustand; wishlist and auth persisted)
   hooks/  data/  types/
 public/images/campaign/ brand campaign renders (bottles carry only the brand name)
 ```
@@ -153,9 +172,10 @@ public/images/campaign/ brand campaign renders (bottles carry only the brand nam
 | `/` | Home |
 | `/collections/:slug` | `perfumes`, `attars`, `oud`, `new-arrivals`, `him`, `her`, `all` (`bestsellers` and `gift-sets` redirect to `all`) |
 | `/products/:slug` | Product page |
+| `/build-your-box` | Build Your Own Box (shown when the backend has a box on sale) |
 | `/checkout` | Checkout (sign-in required) |
 | `/account`, `/account/orders/:id` | Profile, orders, addresses; order detail, payment resume, invoice |
-| `/admin`, `/admin/orders[/:id]`, `/admin/products[/new\|/:id]`, `/admin/coupons`, `/admin/customers` | Admin panel |
+| `/admin`, `/admin/orders[/:id]`, `/admin/products[/new\|/:id]`, `/admin/bundles`, `/admin/coupons`, `/admin/customers` | Admin panel |
 | `/journal`, `/journal/:slug`, `/about`, `/wishlist`, `/help/:slug` | Editorial, story, saved items, customer care |
 
 ## Before launch
@@ -163,7 +183,7 @@ public/images/campaign/ brand campaign renders (bottles carry only the brand nam
 - Replace the placeholder contact details in `src/lib/site.ts` (`care@cosmiclife.in`, `+91 00000 00000`).
 - Shipping, returns, refund, privacy and terms pages are marked as templates: confirm delivery times and return windows,
   and have them reviewed.
-- Fix the backend security issues listed in `docs/INTEGRATION.md` (public product delete, committed JWT secret,
-  password reset without OTP check, default accounts, address endpoints without ownership checks).
+- On the backend: set a new `JWT_SECRET` (the old one was committed), set `CORS_ALLOWED_ORIGINS`, run the database
+  migration, and change or disable the seeded demo accounts (`admin@example.com` / `adminPass`).
 - The newsletter form has no backend endpoint. Set `VITE_NEWSLETTER_URL` to your email provider's public form endpoint;
   until then it tells visitors sign-ups aren't open yet.

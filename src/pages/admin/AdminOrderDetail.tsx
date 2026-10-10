@@ -15,7 +15,7 @@ import { addressApi } from "@/lib/api/addresses";
 import { invoiceAvailable, ORDER_TRANSITIONS, type AddressDTO, type OrderDTO, type OrderStatus } from "@/lib/api/types";
 import { itemCount } from "@/lib/admin";
 import { errorMessage } from "@/lib/errors";
-import { formatDateTime, formatPaise, ORDER_STATUS_LABEL, PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL } from "@/lib/orders";
+import { boxContents, formatDateTime, formatPaise, ORDER_STATUS_LABEL, PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL } from "@/lib/orders";
 import { cn } from "@/lib/cn";
 import { toast } from "@/store/toast";
 
@@ -114,6 +114,7 @@ function OrderView({ order, onChanged }: { order: OrderDTO; onChanged: (o: Order
                           i.productName
                         )}
                         {i.mrp && i.mrp > i.unitPrice ? <span className="block text-[0.72rem] text-ink-faint">MRP {formatPaise(i.mrp)}</span> : null}
+                        {boxContents(i) && <span className="block text-[0.72rem] text-ink-muted">Contains {boxContents(i)}</span>}
                       </td>
                       <td className={cn(td, "text-right tabular")}>{i.quantity}</td>
                       <td className={cn(td, "text-right tabular")}>{formatPaise(i.unitPrice)}</td>

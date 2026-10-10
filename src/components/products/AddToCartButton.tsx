@@ -20,13 +20,21 @@ interface Props {
   onAdded?: () => void;
 }
 
-/** Add-to-cart with a clear three-step feedback: Add to cart → Adding → Added ✓ */
+/** Add-to-cart with a clear three-step feedback: Add to cart → Adding → Added ✓ (once the server confirms). */
 export function AddToCartButton({ product, variant, quantity = 1, label = "Add to cart", style = "outline", size = "sm", className, onAdded }: Props) {
   const v = variant ?? defaultVariant(product);
   const add = useAddToCart();
   const [state, setState] = useState<State>("idle");
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    const t = timers.current;
+    return () => {
+      mounted.current = false;
+      t.forEach(clearTimeout);
+    };
+  }, []);
 
   if (!v.inStock) {
     return (
@@ -36,17 +44,16 @@ export function AddToCartButton({ product, variant, quantity = 1, label = "Add t
     );
   }
 
-  const onClick = () => {
+  // "Added" only once the server has it; a refusal (sold out meanwhile…) returns to idle with its message.
+  const onClick = async () => {
     if (state !== "idle") return;
     setState("adding");
-    timers.current.push(
-      setTimeout(() => {
-        add(product, v, quantity);
-        setState("added");
-        onAdded?.();
-        timers.current.push(setTimeout(() => setState("idle"), 1800));
-      }, 420),
-    );
+    const ok = await add(product, v, quantity);
+    if (!mounted.current) return;
+    if (!ok) return setState("idle");
+    setState("added");
+    onAdded?.();
+    timers.current.push(setTimeout(() => mounted.current && setState("idle"), 1800));
   };
 
   const text = state === "idle" ? label : state === "adding" ? "Adding" : "Added";
@@ -56,6 +63,7 @@ export function AddToCartButton({ product, variant, quantity = 1, label = "Add t
       type="button"
       onClick={onClick}
       aria-live="polite"
+      aria-busy={state === "adding"}
       className={buttonClass({ variant: state === "added" ? "primary" : style, size, className: cn("w-full", className) })}
     >
       <AnimatePresence mode="wait" initial={false}>

@@ -7,8 +7,7 @@ import { ArrowRight, Heart, LayoutDashboard, Menu, Search, ShoppingBag, User } f
 import { useEffect, useState } from "react";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useScrolled } from "@/hooks/useScrolled";
-import { cartCount } from "@/store/cart";
-import { useCart } from "@/store/cart";
+import { useCartCount } from "@/store/cart";
 import { useWishlist } from "@/store/wishlist";
 import { useUI } from "@/store/ui";
 import { mainNav, type NavLink, type NavPanel } from "@/lib/site";
@@ -22,9 +21,10 @@ export function Navbar() {
   const { pathname } = useLocation();
   const user = useAuth((s) => s.user);
   const hydrated = useHydrated();
-  const lines = useCart((s) => s.lines);
   const wishCount = useWishlist((s) => s.ids.length);
-  const count = hydrated ? cartCount(lines) : 0;
+  // The server cart of the signed-in account (0 when signed out).
+  const serverCount = useCartCount();
+  const count = hydrated ? serverCount : 0;
   const openCart = useUI((s) => s.openCart);
   const openSearch = useUI((s) => s.openSearch);
   const setMenu = useUI((s) => s.setMenu);

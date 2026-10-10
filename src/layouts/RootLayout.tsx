@@ -11,24 +11,25 @@ import { Toaster } from "@/components/layout/Toaster";
 import { Providers } from "@/components/layout/Providers";
 import { CatalogProvider } from "@/components/layout/CatalogProvider";
 import { CollectionSkeleton, ProductSkeleton } from "@/pages/RouteSkeletons";
-import { getProducts } from "@/lib/catalog";
+import { getBoxBundle, getProducts } from "@/lib/catalog";
+import type { BundleDTO } from "@/lib/api/types";
 import { EASE } from "@/lib/motion";
-import { useCart } from "@/store/cart";
-import { toast } from "@/store/toast";
 import type { Product } from "@/types";
 
 export async function loader() {
   // The shell (search, bag, quick view) uses the catalogue, but must still render if the backend is down.
+  // box: null = no box on sale; undefined = couldn't tell.
+  const box = await getBoxBundle().catch((): BundleDTO | null | undefined => undefined);
   try {
-    return { products: await getProducts(), catalogOk: true };
+    return { products: await getProducts(), catalogOk: true, box };
   } catch {
-    return { products: [] as Product[], catalogOk: false };
+    return { products: [] as Product[], catalogOk: false, box };
   }
 }
 
 /** Site shell: announcement bar, navbar, page, footer and the global overlays (bag, search, quick view, toasts). */
 export default function RootLayout() {
-  const { products, catalogOk } = useLoaderData<typeof loader>();
+  const { products, box } = useLoaderData<typeof loader>();
   const { pathname } = useLocation();
   const pending = useSlowNavigation();
   const skeleton = pending?.startsWith("/products/") ? <ProductSkeleton /> : pending?.startsWith("/collections/") ? <CollectionSkeleton /> : null;
@@ -39,8 +40,7 @@ export default function RootLayout() {
         Skip to content
       </a>
       <Providers>
-        <CatalogProvider products={products}>
-          {catalogOk && <CartReconciler products={products} />}
+        <CatalogProvider products={products} box={box}>
           <AnnouncementBar />
           <Navbar />
           <main id="main" className="flex-1">
@@ -62,19 +62,6 @@ export default function RootLayout() {
   );
 }
 
-/** Keeps the bag honest: live prices and stock, and drops products that are gone or sold out. */
-function CartReconciler({ products }: { products: Product[] }) {
-  useEffect(() => {
-    const run = () => {
-      const { removed, reduced } = useCart.getState().reconcile(products);
-      if (removed.length) toast({ title: `Removed from your bag: ${removed.join(", ")}`, description: "No longer available.", tone: "error" });
-      if (reduced.length) toast({ title: `Quantity updated: ${reduced.join(", ")}`, description: "Your bag now matches the stock available.", tone: "error" });
-    };
-    if (useCart.persist.hasHydrated()) run();
-    return useCart.persist.onFinishHydration(run);
-  }, [products]);
-  return null;
-}
 
 /** Rendered once while the first page's data loads. */
 export function AppFallback() {

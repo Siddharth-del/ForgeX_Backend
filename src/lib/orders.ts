@@ -1,5 +1,5 @@
 /** Display helpers for orders, shared by the account pages and the admin panel. */
-import type { OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/api/types";
+import type { OrderItemDTO, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/api/types";
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   PENDING_PAYMENT: "Awaiting payment",
@@ -52,3 +52,9 @@ export const formatPaise = (p: number | null | undefined) => {
   const v = (p ?? 0) / 100;
   return Number.isInteger(v) ? inr0.format(v) : inr2.format(v);
 };
+
+/** What's inside a purchased box ("Royal Oud · 2 × Amber Nuit"), or null for a single product. */
+export function boxContents(item: Pick<OrderItemDTO, "components">): string | null {
+  if (!item.components?.length) return null;
+  return item.components.map((c) => (c.quantity > 1 ? `${c.quantity} × ${c.productName}` : c.productName)).join(" · ");
+}
