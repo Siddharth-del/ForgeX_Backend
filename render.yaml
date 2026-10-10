@@ -26,7 +26,7 @@ services:
       # answers 403 "Invalid CORS request" to origins it doesn't know.
       - type: rewrite
         source: /api/*
-        destination: https://YOUR-BACKEND.onrender.com/api/*
+        destination: https://forgex-website.onrender.com/api/*
       # Single-page app: every page URL serves index.html (real files in dist/ are served first).
       - type: rewrite
         source: /*
